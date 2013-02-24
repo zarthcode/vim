@@ -9,12 +9,12 @@ filetype plugin indent on
 set background=dark
 colorscheme solarized
 
+
 " Tab Config
 set tabpagemax=15
 set cindent
 set tabstop=4
 set shiftwidth=4
-
 " Search settings
 set incsearch		" Highlight as you type.
 set ignorecase		" Ignore case...
@@ -30,7 +30,21 @@ nmap \l :setlocal number!<CR>
 nmap \o :set paste!<CR>
 nmap j gj
 nmap k gk
+" Display errors for the current buffer
+nmap \e :Errors
+"Forces a synstastic check.
+nmap \s :SyntasticCheck
+nmap \S :SyntasticToggleMode
 
+" Syntastic Options
+let g:syntastic_check_on_open=1
+let g:syntastic_echo_current_error=1
+let g:syntastic_enable_signs=1
+"let g:syntastic_error_symbol='×'
+"let g:syntastic_enable_highlighting=0
+let g:syntastic_mode_map = { 'mode': 'active',
+							\ 'active_filetypes': ['c', 'h', 'cpp', 'hpp'],
+							\ 'passive_filetypes': ['puppet'] }
 "More command history
 set history=1000
 
@@ -44,8 +58,10 @@ set laststatus=2	" Always show the statusline
 set encoding=utf-8	" Necessary to show Unicode glyphs
 
 " Powerline settings
-
+" execute Pl#Theme#InsertSegment('syntastic', 'after', 'filename')
+set formatoptions-=cro
 set nrformats+=alpha
+
 
 " Complete options (disable preview scratch window
 "set completeopt=menu,menuone,longest
