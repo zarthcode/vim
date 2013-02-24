@@ -1,3 +1,5 @@
+set nocompatible	" Disable vi-compatibility
+
 execute pathogen#infect()
 
 syntax enable
@@ -29,15 +31,19 @@ nmap \o :set paste!<CR>
 nmap j gj
 nmap k gk
 
+"More command history
+set history=1000
+
 " NERD Tree utility mapping
 nmap \e :NERDTreeToggle<CR>
 autocmd vimenter * if !argc() | NERDTree | endif		" Open NERDTree if no arguments were given.
 autocmd bufenter * if (winnr("$") == 1 && exists ("b:NERDTreeType") && b:NERDTreeType == "primary") | q | endif		" Close if only NERDTree remains.
 
 " Powerline required:
-set nocompatible	" Disable vi-compatibility
 set laststatus=2	" Always show the statusline
 set encoding=utf-8	" Necessary to show Unicode glyphs
+
+" Powerline settings
 
 set nrformats+=alpha
 
