@@ -26,15 +26,15 @@ nmap \q :nohlsearch<CR>
 
 " Basic keymappings
 imap jj <Esc> 
-nmap \l :setlocal number!<CR>
-nmap \o :set paste!<CR>
+nnoremap <silent> \l :setlocal number!<CR>
+nnoremap <silent> \o :set paste!<CR>
 nmap j gj
 nmap k gk
 " Display errors for the current buffer
-nmap \e :Errors<CR>
+nnoremap <silent> \e :Errors<CR>
 "Forces a synstastic check.
-nmap \s :SyntasticCheck<CR>
-nmap \S :SyntasticToggleMode<CR>
+nnoremap <silent> \s :SyntasticCheck<CR>
+nnoremap <silent> \S :SyntasticToggleMode<CR>
 
 " Syntastic Options
 let g:syntastic_check_on_open=1
@@ -49,7 +49,7 @@ let g:syntastic_mode_map = { 'mode': 'active',
 set history=1000
 
 " NERD Tree utility mapping
-nmap \E :NERDTreeToggle<CR>
+nnoremap <silent> \E :NERDTreeToggle<CR>
 autocmd vimenter * if !argc() | NERDTree | endif		" Open NERDTree if no arguments were given.
 autocmd bufenter * if (winnr("$") == 1 && exists ("b:NERDTreeType") && b:NERDTreeType == "primary") | q | endif		" Close if only NERDTree remains.
 
@@ -61,6 +61,9 @@ set encoding=utf-8	" Necessary to show Unicode glyphs
 " execute Pl#Theme#InsertSegment('syntastic', 'after', 'filename')
 set nrformats+=alpha
 
+" Tagbar
+nnoremap <silent> \T :TagbarToggle<CR>
+nnoremap <silent> \t :TagbarOpenAutoClose<CR>
 
 " Complete options (disable preview scratch window
 "set completeopt=menu,menuone,longest
