@@ -75,8 +75,17 @@ nnoremap <silent> \e :Errors<CR>
 nnoremap <silent> \s :SyntasticCheck<CR>
 nnoremap <silent> \S :SyntasticToggleMode<CR>
 
+" Easytags
+set tags=./tags;
+let g:easytags_dynamic_files=1
+let g:easytags_updatetime_autodisable=1
+
+" YCM options
+let g:ycm_global_ycm_extra_conf = '~/.ycm_global_ycm_extra_conf' 
+let g:ycm_confirm_extra_conf = 0
+
 " Syntastic Options
-let g:syntastic_check_on_open=1
+let g:syntastic_check_on_open=0
 let g:syntastic_echo_current_error=1
 let g:syntastic_enable_signs=1
 "let g:syntastic_error_symbol='×'
