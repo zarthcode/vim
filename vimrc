@@ -84,6 +84,9 @@ let g:syntastic_enable_signs=1
 let g:syntastic_mode_map = { 'mode': 'active',
 							\ 'active_filetypes': ['c', 'h', 'cpp', 'hpp'],
 							\ 'passive_filetypes': ['puppet'] }
+
+let g:ycm_confirm_extra_conf=0
+let g:ycm_global_ycm_extra_conf='~/.vim/.ycm_extra_conf.py'
 "More command history
 set history=1000
 
@@ -99,6 +102,7 @@ set encoding=utf-8	" Necessary to show Unicode glyphs
 " Powerline settings
 " execute Pl#Theme#InsertSegment('syntastic', 'after', 'filename')
 set nrformats+=alpha
+
 
 " Tagbar
 nnoremap <silent> \T :TagbarToggle<CR>
