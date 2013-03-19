@@ -27,4 +27,8 @@
 	url = https://github.com/Valloric/YouCompleteMe.git
 [submodule "bundle/easytags"]
 	path = bundle/easytags
+<<<<<<< HEAD
 	url = https://github.com/xolox/vim-easytags.git
+=======
+	url = https://github.com/xolox/vim-easytags
+>>>>>>> 9dfa6748c8d3a882cb945fa3b12b23f7db340325
