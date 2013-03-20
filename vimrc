@@ -3,6 +3,7 @@ set nocompatible	" Disable vi-compatibility
 execute pathogen#infect()
 
 syntax enable
+set syntax=cpp.doxygen
 filetype plugin indent on
 
 " Theme (light or dark)
