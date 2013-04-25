@@ -1,0 +1,18 @@
+/**
+ * @file AccelMgr.h
+ * @brief LIS3DH accelerometer manager.
+ * @author Anthony Clay, ZarthCode LLC
+ * @version 1.00
+ * @date 2013-04-18
+ */
+#include <stdbool.h>
+#include <stdint.h>
+
+
+uint8_t Accel_Init(void);
+
+void Accel_Shutdown(void);
+
+void Accel_Sleep(void);
+
+void Accel_Service(void);

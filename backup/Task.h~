@@ -1,0 +1,18 @@
+/**
+ * @file Task.h
+ * @brief Idle task execution.
+ * @author Anthony Clay, ZarthCode LLC
+ * @version 1.00
+ * @date 2013-04-17
+ */
+
+
+/**
+ * @brief Blocks, running the current idle task until the given flag matches a mask.
+ *
+ * @param flag[in] Address of the variable to watch.
+ * @param mask[in] Bitmask used to indicate caller needs the processor back.
+ */
+void idleTask(uint8_t& flag, uint8_t& mask);
+
+

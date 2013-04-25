@@ -1,0 +1,7 @@
+// Debug output over spi
+#include <avr/io.h>
+
+
+
+void InitSPIDbg(SPI_t* device, uint8_t address);
+

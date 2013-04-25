@@ -1,0 +1,18 @@
+// Dekaflex 9150 IMU manager
+#include <stdbool.h>
+
+/// Initializes the selected IMU module. (Required for normal operation.)
+bool IMU_Init(void);
+
+void IMU_Disable(void);
+
+void IMU_Recalibrate(void);
+
+// Recalibration procedure.
+
+/// @TODO Secondary IMU code
+
+// Sample rate
+// Compass mixing
+
+//

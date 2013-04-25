@@ -1,0 +1,11 @@
+/**
+ * @file ml.h
+ * @brief Math functions.
+ * @author Anthony Clay, ZarthCode LLC
+ * @version 1.00
+ * @date 2013-04-02
+ */
+
+static unsigned short orientation_matrix_to_scalar( const signed char *mtx);
+static unsigned short row_2_scale(const signed char *row);
+

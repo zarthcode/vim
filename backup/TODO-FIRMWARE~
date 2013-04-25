@@ -1,0 +1,88 @@
+
+DekaFlex Firmware TODO
+======================
+
+* Add a button input.
+* implement USART Bluetooth
+* implement USB interface
+	* Direct data xfer.
+	* HID device class.
+	* DFU programming mode.
+* Implement 9-axis fusion
+	* Read magenetometer data successfully.
+* Implement calibration routine
+* Implement secondary IMU (If necessary)
+* Implement battery management
+	* Battery level indication (Gas gauge)
+	* Bluetooth/USB notification (across HID)
+	* LDO Charge pump.
+* Harden TWI error handling/behavior.
+	* Add retry ability.
+	* Limit retries.
+* Add halt/fatal error functionality.
+	* halt() institutes an immedate restart.
+	* fatal() pauses to show error, then restarts.
+* Consider switching to an ARM processor if Atmel strikes out.
+	* XMEGA can only be debugged over PDI using Atmel studio.  No avarice. (Strike I)
+* Implement sleep routines.
+	+ IDLE - Charging and searching/waiting for connection. Turn off by timeout (configurable) or long-press system button.
+	+ SLEEP - OFF, not searching for connection.  Rouse by pressing the system button.
+* Implement PWM on LED pins.
+* Implement a "dump bytes" attribute for i2c read.  To allow for quickly sifting through the IMU fifo backlog.
+	
+BUGS
+====
+
+* On IMU initialize failure, we reset the device via Fatal().  The IMU can now be reset independently.
+* IMU seems to fill it's fifo, and then fall out of alignment.  The following 3 reads are then bogus - and suspiciously consistent.
+* Enabling too much verbosity on debug/serial messages leads to zero SRAM.  Need to implement debug strings in program memory, bad.
+	* NOTE: This has to be implemented for the developer edition dekaflex model. See the PSTR() macro in avr/pgmspace.h
+
+Changes (4/23/13)
+=================
+
+* Moved debug strings to program space.
+
+Changes (4/18/13)
+=================
+
+* Added LIS3DH spi driver/manager
+* MPU Device is now powered via PB3.  This has lead to greatly-improved reliability in startup.
+* Implement DMP quaternion (6-axis)
+* Remove printf calls in favor or informational/error macros.
+	* log_e for errors
+	* log_i for informational
+	* log_v for verbose
+	* File-level debug messaging (include guard-like)
+
+Changes (4/16/13)
+=================
+
+* DMP code isn't 100% yet.  MPU-9150 appears to be giving a stable quat, accelerometer isn't on crack.  gyro needs testing.
+* Overflow problems appear to be alleviated/gone!
+* This would have been a lot easier with real docs for this chip.  A lot of the example code out there seems to take unnecessary/incorrect steps.
+
+Changes (4/13/13)
+=================
+
+* I think the infernal MPU9150 is working now! 6-axis only, for now.
+* More TWI robustness added.  Tolerance for errors, retry and recovery facilities for reg read/write
+* Beginnings of fixed-point math library for 3D vector, quaternions, and other operations.
+
+
+Changes (4/3/13)
+================
+* Added two bi-color LED status lights:
+	+ PB0 and PB1 are connected to LED0 (source). Suggested use is battery state, BT status, and error communication.
+	+ PB1 and PB2 are connected to LED1 (source, consider changing to sink). Suggested use is user context.
+
+* PDI is now used as the programming interface, over JTAG. This is driven mainly by difficulty debugging using Atmel Studio 6 and programming while using avrdude.  AFAIK, avarice cannot be used with this chip. Which is sad.
+
+* Implemented self-reset detection (due to programming, etc.) Can detect:
+	+ Cold boot
+	+ Brown-out reset
+	+ PDI reset
+	+ Software reset
+	+ WDT reset
+
+* Implemented self-restart when errors are encountered during startup.

@@ -1,0 +1,321 @@
+#include "IMUMgr.h"
+
+#include "inv_mpu.h"
+#include "inv_mpu_dmp_motion_driver.h"
+
+#include "Math/matrix.h"
+#include "Math/vector.h"
+#include <stdio.h>
+#include <avr/interrupt.h>
+#include <stdbool.h>
+#include "imu.h"
+#include "DMP/interrupt_cb.h"
+
+// #define IMUMGR_VERBOSE
+// #define IMUMGR_INFO
+// #define IMUMGR_ERROR
+
+
+// Logging
+#ifdef IMUMGR_VERBOSE
+	#define log_v(...) printf(__VA_ARGS__)
+#else
+	#define log_v(...) while(0) {};
+#endif
+
+
+#ifdef IMUMGR_INFO
+	#define log_i(...) printf(__VA_ARGS__)
+#else
+	#define log_i(...) while(0) {};
+#endif
+
+
+#ifdef IMUMGR_ERROR
+	#define log_e(...) printf(__VA_ARGS__)
+#else
+	#define log_e(...) while(0) {};
+#endif
+
+
+int_param_s prim_int0;
+int_param_s prim_int1;
+
+static int sample_rate = 100;
+
+
+/// Primary IMU data
+imudata_t primaryIMU;
+
+bool IMU_Init(void)
+{
+
+
+	signed char primary_orientation[9] = {	1, 0, 0,
+											0, 1, 0,
+											0, 0, 1 };
+	// Select IMU 0 
+
+	
+	// Enable interrupt inputs.
+	int_param_s xmega_int;
+	xmega_int.active_low = true;
+	xmega_int.cb = NULL;
+	xmega_int.int_num = 0;
+	xmega_int.pin =	2;
+	xmega_int.port = &PORTC;
+	
+	log_i("MPU initializing\n");
+	
+	if(mpu_init(NULL))
+	{
+		log_e("MPU init failed.\n");
+		return false;
+	}
+	else
+	{
+		log_i("MPU init successful!\n");
+	}
+
+	if(mpu_set_sensors(INV_XYZ_GYRO | INV_XYZ_ACCEL | INV_XYZ_COMPASS))
+	{
+		log_e("MPU sensor init failed.\n");
+		return false;
+	}
+	else
+	{
+		log_i("MPU sensor init successful!\n");
+	}
+
+	if(mpu_configure_fifo(INV_XYZ_GYRO | INV_XYZ_ACCEL))
+	{
+		log_e("MPU fifo configuration failed.\n");
+		return false;
+	}
+	else
+	{
+		log_i("MPU fifo configuration successful!\n");
+	}
+/*
+	if(mpu_set_sample_rate(sample_rate))
+	{
+		printf("MPU sample rate configuration failed.\n");
+		return false;
+	}
+#ifdef IMUMGR_VERBOSE
+	else
+	{
+		printf("MPU sample rate configuration successful!\n");
+	}
+#endif
+*/
+	// It's not necessary to set the compass sample rate, it's done already.
+
+	if(dmp_load_motion_driver_firmware())
+	{
+		log_e("DMP firmware load failed.\n");
+		return false;
+	}
+#ifdef IMUMGR_VERBOSE
+	else
+	{
+		log_i("DMP firmware load successful.\n");
+	}
+#endif
+
+	if(dmp_set_orientation(orientation_matrix_to_scalar(primary_orientation)))
+	{
+		log_e("dmp_set_orientation failed.\n");
+		return false;
+	}
+#ifdef IMUMGR_VERBOSE
+	else
+	{
+		log_i("dmp_set_orientation successful.\n");
+	}
+#endif
+
+	if(dmp_enable_feature(DMP_FEATURE_6X_LP_QUAT | DMP_FEATURE_SEND_RAW_ACCEL | DMP_FEATURE_SEND_CAL_GYRO | DMP_FEATURE_GYRO_CAL))
+	{
+		log_e("DMP feature enable failed.\n");
+		return false;
+	}
+#ifdef IMUMGR_VERBOSE
+	else
+	{
+		log_i("DMP feature enable successful.\n");
+	}
+#endif
+	
+	// See MPU-9150 Register Map and Descriptions (4.20 Register 55 INT Pin)
+	// Active High (INT_LEVEL 1)
+	if(mpu_set_int_level(xmega_int.active_low ? 1 : 0))
+	{
+		log_e("Failed to set interrupt level\n");
+		return false;
+	}
+
+	// Push-Pull (INT_OPEN 0)
+	// 50us pulse. (LATCH_INT_EN 0)
+	if(mpu_set_int_latched(1))
+	{
+		log_e("Failed to set interrupt latching\n");
+		return false;
+	}
+
+	if(dmp_set_interrupt_mode(DMP_INT_CONTINUOUS))
+	{
+		log_e("Failed to set continuous interrupt mode.\n");
+		return false;
+	}
+#ifdef IMUMGR_VERBOSE
+	else
+	{
+		log_i("DMP set continuous interrupt mode successful.\n");
+	}
+#endif
+	
+	if(mpu_set_dmp_state(1))
+	{
+		log_e("DMP set state failed.\n");
+		return false;
+	}
+#ifdef IMUMGR_VERBOSE
+	else
+	{
+		log_i("DMP set state successful.\n");
+	}
+#endif
+
+
+	if(dmp_set_fifo_rate(sample_rate))
+	{
+		log_e("DMP set fifo rate failed.\n");
+		return false;
+	}
+#ifdef IMUMGR_VERBOSE
+	else
+	{
+		log_i("DMP set fifo rate successful.\n");
+	}
+#endif
+	
+	// Enable interrupts
+	
+	xmega_reg_int_cb(xmega_int.int_num, xmega_int.cb, xmega_int.port, xmega_int.pin, xmega_int.active_low);
+
+	return true;
+}
+
+
+void IMU_Disable(void)
+{
+
+	if(mpu_set_dmp_state(0))
+	{
+		log_e("DMP shutdown failed.\n");
+	}
+#ifdef IMUMGR_VERBOSE
+	else
+	{
+		log_i("DMP shutdown successful.\n");
+	}
+#endif
+
+
+	// Disable accel, gryo, and compass.
+	if(mpu_set_sensors(0))
+	{
+		log_e("DMP sensor shutdown failed.\n");
+	}
+#ifdef IMUMGR_VERBOSE
+	else
+	{
+		log_i("DMP sensor shutdown successful.\n");
+	}
+#endif
+
+
+}
+
+
+void IMU_Recalibrate(void)
+{
+
+	// Load calibration data from EEPROM.
+
+	// Set calibration
+
+
+}
+
+bool IMU_SelfTest(void)
+{
+	int result;
+	long gyro_bias[3], accel_bias[3];
+
+	result = mpu_run_self_test(gyro_bias, accel_bias);
+
+	if(result & 0x01)
+	{
+		log_i("Gyro self-test PASSED.\n");
+	}
+	else
+	{
+		log_e("Gryo self-test FAILED.\n");
+	}
+
+	if(result & 0x02)
+	{
+		log_i("Accelerometer self-test PASSED.\n");
+	}
+	else
+	{
+		log_e("Accelerometer self-test FAILED.\n");
+	}
+
+	if(result & 0x04)
+	{
+		log_i("Magnetometer self-test PASSED.\n");
+	}
+	else
+	{
+		log_e("Magnetometer self-test FAILED.\n");
+	}
+
+	if(result & 0x07)
+	{
+		log_i("Self-test PASSED.\n");
+	}
+	else
+	{
+		log_e("Self-test FAILED.\n");
+	}
+
+}
+
+/// @TODO implement secondary IMU
+
+// Interrupt Handler
+// Int 0, 1
+/// Interrupt vector for IMU devices.
+ISR(PORTC_INT0_vect)
+{
+
+	// Determine which interrupt was fired.
+
+	// Perform callback.
+	if(imu_read(&primaryIMU, false))
+	{
+		log_v("\tQuat W: %li X: %li Y: %li Z: %li\n", primaryIMU.rawQuat[QUAT_W], primaryIMU.rawQuat[QUAT_X], primaryIMU.rawQuat[QUAT_Y], primaryIMU.rawQuat[QUAT_Z]);
+		log_v("\tAccl X: %i Y: %i Z: %i\n", primaryIMU.rawAccel[VEC3_X], primaryIMU.rawAccel[VEC3_Y], primaryIMU.rawAccel[VEC3_Z]);
+
+	} // Failure doesn't mean an error, just that there's no data.  (Don't worry about errors at this level, that's what logging is for.)
+	
+
+	// Update IMU data
+
+	// Interrupt serviced.
+	PORTC.INTFLAGS = 0;
+
+}

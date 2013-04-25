@@ -1,0 +1,106 @@
+#include "quaternion.h"
+
+
+
+void quat_norm(const quaternion_t* q, double *n)
+{
+
+	*n = sqrt((*q[QUAT_W]) * (*q[QUAT_W]) + (*q[QUAT_X]) * (*q[QUAT_X]) + (*q[QUAT_Y]) * (*q[QUAT_Y]) + (*q[QUAT_Z]) * (*q[QUAT_Z]));
+
+}
+
+void quat_normalize(quaternion_t* q)
+{
+
+	double length;
+
+	quat_norm(q, &length);
+
+	if(length == 0.0)
+		return;
+	
+	(*q[QUAT_W]) /= length;
+	(*q[QUAT_X]) /= length;
+	(*q[QUAT_Y]) /= length;
+	(*q[QUAT_Z]) /= length;
+	
+
+}
+
+
+void quat_toEuler(const quaternion_t* q, vector3d_t* v)
+{
+
+	// Only YOU can prevent gimbal lock!
+	double pole = (double)M_PI / 2.0 - 0.05;
+
+	(*v[VEC3_Y]) = asin(2.0 * ((*q[QUAT_W]) * (*q[QUAT_Z]) + (*q[QUAT_X]) * (*q[QUAT_Z])));
+
+	if (((*v[VEC3_Y]) < pole) && ((*v[VEC3_Y]) > -pole)) {
+		(*v[VEC3_X]) = atan2f(2.0f * ((*q[QUAT_Y]) * (*q[QUAT_Z]) + (*q[QUAT_W]) * (*q[QUAT_X])),
+					1.0f - 2.0f * ((*q[QUAT_X]) * (*q[QUAT_X]) + (*q[QUAT_Y]) * (*q[QUAT_Y])));
+	}
+
+	(*v[VEC3_Z]) = atan2f(2.0f * ((*q[QUAT_X]) * (*q[QUAT_Y]) + (*q[QUAT_W]) * (*q[QUAT_Z])),
+					1.0f - 2.0f * ((*q[QUAT_Y]) * (*q[QUAT_Y]) + (*q[QUAT_Z]) * (*q[QUAT_Z])));
+
+
+}
+
+void euler_toQuaternion(const vector3d_t* v, quaternion_t* q)
+{
+
+	
+	double cosX2 = cos((*v[VEC3_X]) / 2.0);
+	double sinX2 = sin((*v[VEC3_X]) / 2.0);
+	double cosY2 = cos((*v[VEC3_Y]) / 2.0);
+	double sinY2 = sin((*v[VEC3_Y]) / 2.0);
+	double cosZ2 = cos((*v[VEC3_Z]) / 2.0);
+	double sinZ2 = sin((*v[VEC3_Z]) / 2.0);
+
+	*q[QUAT_W] = cosX2 * cosY2 * cosZ2 + sinX2 * sinY2 * sinZ2;
+	*q[QUAT_X] = sinX2 * cosY2 * cosZ2 - cosX2 * sinY2 * sinZ2;
+	*q[QUAT_Y] = cosX2 * sinY2 * cosZ2 + sinX2 * cosY2 * sinZ2;
+	*q[QUAT_Z] = cosX2 * cosY2 * sinZ2 - sinX2 * sinY2 * cosZ2;
+
+	quat_normalize(q);
+
+}
+
+void quat_conjugate(quaternion_t* s, quaternion_t* d)
+{
+
+	(*d[QUAT_W]) = (*s[QUAT_W]);
+	(*d[QUAT_X]) = -(*s[QUAT_X]);
+	(*d[QUAT_Y]) = -(*s[QUAT_Y]);
+	(*d[QUAT_Z]) = -(*s[QUAT_Z]);
+
+}
+
+void quat_multiply(const quaternion_t* qa, const quaternion_t* qb, quaternion_t* qd)
+{
+
+	vector3d_t va;
+	vector3d_t vb;
+	double dotAB;
+	vector3d_t crossAB;
+
+	va[VEC3_X] = (*qa[QUAT_X]);
+	va[VEC3_Y] = (*qa[QUAT_Y]);
+	va[VEC3_Z] = (*qa[QUAT_Z]);
+
+	vb[VEC3_X] = (*qb[QUAT_X]);
+	vb[VEC3_Y] = (*qb[QUAT_Y]);
+	vb[VEC3_Z] = (*qb[QUAT_Z]);
+
+	vector3DotProduct(va, vb, &dotAB);
+	vector3CrossProduct(va, vb, crossAB);
+
+	(*qd[QUAT_W]) = (*qa[QUAT_W]) * (*qb[QUAT_W]) - dotAB;
+	(*qd[QUAT_X]) = (*qa[QUAT_W]) * vb[VEC3_X] + (*qb[QUAT_W]) * va[VEC3_X] + crossAB[VEC3_X];
+	(*qd[QUAT_Y]) = (*qa[QUAT_W]) * vb[VEC3_Y] + (*qb[QUAT_W]) * va[VEC3_Y] + crossAB[VEC3_Y];
+	(*qd[QUAT_Z]) = (*qa[QUAT_W]) * vb[VEC3_Z] + (*qb[QUAT_W]) * va[VEC3_Z] + crossAB[VEC3_Z];	
+
+}
+
+

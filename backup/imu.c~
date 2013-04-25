@@ -1,0 +1,119 @@
+#include "imu.h"
+#include "quaternion.h"
+#include "vector.h"
+#include "DMP/inv_mpu_dmp_motion_driver.h"
+#include "DMP/inv_mpu.h"
+
+#include <stdbool.h>
+#include <stdio.h>
+
+/*
+#define IMU_VERBOSE
+#define IMU_INFO
+#define IMU_ERROR
+*/
+
+// Logging
+#ifdef IMU_VERBOSE
+	#define log_v(...) printf(__VA_ARGS__)
+#else
+	#define log_v(...) while(0) {};
+#endif
+
+
+#ifdef IMU_INFO
+	#define log_i(...) printf(__VA_ARGS__)
+#else
+	#define log_i(...) while(0) {};
+#endif
+
+
+#ifdef IMU_ERROR
+	#define log_e(...) printf(__VA_ARGS__)
+#else
+	#define log_e(...) while(0) {};
+#endif
+
+
+
+
+/// @TODO Secondary IMU data
+
+
+
+uint8_t imu_read(imudata_t *imu, bool bReadMagnetometer)
+{
+
+	uint16_t more = 0;
+
+	// TODO If there isn't an unserviced interrupt, or if data is ready...
+
+	uint16_t sensors;
+
+	// ...read data from the fifo until empty.
+
+	do
+	{
+
+		int result = dmp_read_fifo(&imu->rawGyro, &imu->rawAccel, &imu->rawQuat, &imu->imuTimestamp, &sensors, &more);
+
+		if(result == -3)
+		{
+
+			log_e("dmp_read_fifo() failed(%i).\n", result);
+			
+
+		}
+		if(result == -2)
+		{
+
+			// Recoverable error, or buffer overflow.  Simply retry.
+			/// @TODO Insert retry logic. This is an interrupt, afterall.
+			
+
+		}
+		if(result == -1)
+		{
+			// -1 isn't an error.  There's simply no data available.
+//			return false;
+			log_e("\tNo data!(%u)\n", more);
+		}
+
+		log_e("\tMORE!(%u)\n", more);
+
+	} while(more > 0);
+	
+	log_e("\tDone(%u)\n", more);
+
+	if(bReadMagnetometer)
+	{
+
+		// Update latest data from the magenetometer, also.
+		int result = mpu_get_compass_reg(&imu->rawMag, &imu->magTimestamp);
+		if(result < 0)
+		{
+
+			log_e("mpu_get_compass_reg() failed(%i).\n", result);
+			return false;
+
+		}
+
+
+		// Fuse the magnetometer data.
+	}
+
+	return true;
+
+}
+
+bool imu_isOnline(void)
+{
+
+	// Determine if the MPU is currently running.
+
+
+	return false;
+
+
+}
+

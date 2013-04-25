@@ -1,0 +1,21 @@
+/**
+ * @file Debug.h
+ * @brief Debugging controls
+ * @author Anthony Clay, ZarthCode LLC
+ * @version 
+ * @date 2013-03-31
+ */
+
+
+// Uncomment to enable all debugging messages (noisy, not recommended)
+// #DEBUG_ALL
+
+// Enable TWI debugging messages
+
+// Enable SPI debugging messages
+
+// MPU debugging
+
+// DMP debugging
+
+//

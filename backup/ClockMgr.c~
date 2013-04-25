@@ -1,0 +1,231 @@
+/*
+ * ClockMgr.c
+ *
+ * Created: 2/16/2013 8:02:50 PM
+ *  Author: Anthony
+ */ 
+#include "ClockMgr.h"
+#include <stdio.h>
+#include <stdbool.h>
+#include "LUFA/Platform/XMEGA/ClockManagement.h"
+#include <avr/interrupt.h>
+#include <stdio.h>
+
+// Logging
+#ifdef CLK_VERBOSE
+	#define log_v(...) printf_P(__VA_ARGS__)
+#else
+	#define log_v(...) while(0) {};
+#endif
+
+
+#ifdef CLK_INFO
+	#define log_i(...) printf_P(__VA_ARGS__)
+#else
+	#define log_i(...) while(0) {};
+#endif
+
+
+#ifdef CLK_ERROR
+	#define log_e(...) printf_P(__VA_ARGS__)
+#else
+	#define log_e(...) while(0) {};
+#endif
+
+// Current clock state
+clockstate_t s_ClockState = CLK_INIT;
+
+/// Initialize the clock into "Normal" state.
+bool Clk_Initialize(void)
+{
+	
+	// Startup occurs w/2MHz osc, all prescalers off.
+	return Clk_SetState(CLK_NORMAL);
+	
+}
+
+
+bool Clk_SetState(clockstate_t state)
+{
+	// Result
+	uint8_t result = false;
+	
+	if (s_ClockState == state)
+	{
+		return true;
+	}
+	// Switch to the requested state
+	switch (state)
+	{
+	case CLK_INIT:
+	
+		// Run at 2MHz
+		if(	XMEGACLK_StartInternalOscillator(CLOCK_SRC_INT_RC2MHZ)
+			&& XMEGACLK_SetCPUClockSource(CLOCK_SRC_INT_RC2MHZ)
+			&& XMEGACLK_StopInternalOscillator(CLOCK_SRC_INT_RC32MHZ))
+			{
+				result = true;
+			}
+		break;
+	case CLK_SLOW:
+		
+		// Enable 2MHz
+		if( XMEGACLK_StartInternalOscillator(CLOCK_SRC_INT_RC2MHZ)
+			&& XMEGACLK_SetCPUClockSource(CLOCK_SRC_INT_RC2MHZ)
+			&& XMEGACLK_StartPLL(CLOCK_SRC_INT_RC2MHZ, 2000000, 8000000)
+			&& XMEGACLK_SetCPUClockSource(CLOCK_SRC_PLL)
+			&& XMEGACLK_StopInternalOscillator(CLOCK_SRC_INT_RC2MHZ))
+			{
+				result = true;	
+			}
+		break;
+		
+	case CLK_NORMAL:
+	
+		// Run the CPU at 16 MHz
+		if( XMEGACLK_StartInternalOscillator(CLOCK_SRC_INT_RC2MHZ)
+			&& XMEGACLK_SetCPUClockSource(CLOCK_SRC_INT_RC2MHZ)
+			&& XMEGACLK_StartPLL(CLOCK_SRC_INT_RC2MHZ, 2000000, 16000000)
+			&& XMEGACLK_SetCPUClockSource(CLOCK_SRC_PLL)
+			&& XMEGACLK_StopInternalOscillator(CLOCK_SRC_INT_RC32MHZ))
+			{
+				result = true;
+			}
+		
+		break;
+		
+	case CLK_PERFORMANCE:
+		// Run the CPU at 32 MHz
+		if( XMEGACLK_StartInternalOscillator(CLOCK_SRC_INT_RC32MHZ)
+			&& XMEGACLK_SetCPUClockSource(CLOCK_SRC_INT_RC32MHZ)
+			&& XMEGACLK_StopInternalOscillator(CLOCK_SRC_INT_RC2MHZ))
+			{
+				result = true;
+			}
+		break;
+		
+	case CLK_USB:
+		// CPU to 32MHz
+		// PLL to 48MHz
+		if( XMEGACLK_StartInternalOscillator(CLOCK_SRC_INT_RC32MHZ)
+			&& XMEGACLK_StartPLL(CLOCK_SRC_INT_RC32MHZ, 8000000, 48000000)
+			&& XMEGACLK_SetCPUClockSource(CLOCK_SRC_INT_RC32MHZ)
+			&& XMEGACLK_StopInternalOscillator(CLOCK_SRC_INT_RC2MHZ))
+			{
+				result = true;
+			}
+		break;
+	}
+	
+	if (result == true)
+	{
+		s_ClockState = state;
+	}
+	else
+	{
+		/// @todo Log a critical failure while trying to change clock settings.
+		
+		while(1)
+		{
+			log_e("Critical failure while trying to change clock settings.");
+			_delay_ms(10);
+		}
+		// Halt
+	}
+	
+	return result;
+}
+
+clockstate_t Clk_State(void)
+{
+	return s_ClockState;
+}
+
+void RTC_Start(void)
+{
+	// Startup the RTC clock	
+	
+	/// @todo investigate using the external TOSC pins with a watch xtal, for lower power consumption and greater accuracy.
+	
+	// Startup 32.768kHz OSC
+	if(!XMEGACLK_StartInternalOscillator(CLOCK_SRC_INT_RC32KHZ))
+	{
+		/// @todo 32.768kHz didn't start up.
+	}
+	
+	// No prescaling, 1mS Precision
+	RTC.CTRL = RTC_PRESCALER_DIV1_gc;
+	
+	// Set RTCSRC for 1mS pulses
+	CLK.RTCCTRL = CLK_RTCEN_bm | CLK_RTCSRC_RCOSC_gc;
+	
+	/// @todo Configure overflow interrupt for true 32bit operation.  (Bonus for using the event bus.)
+	// Configure TCC0 as the high word RTC using event ch 0.
+	EVSYS.CH0MUX = EVSYS_CHMUX_RTC_OVF_gc;
+	EVSYS.CH0CTRL = EVSYS_DIGFILT_1SAMPLE_gc;
+	
+	TCC0.CTRLA = TC_CLKSEL_EVCH0_gc;
+	
+	// Normal counter mode
+	TCC0.CTRLE = 0x00;
+	
+	// Interrupts (Timer Error = HIGH, Overflow = Med.)
+	TCC0.INTCTRLA = (0x03 << TC0_ERRINTLVL_gp) | (0x02 << TC0_OVFINTLVL_gp);
+	
+	// Count up.
+	
+	
+}
+
+void RTC_Stop(void)
+{
+	XMEGACLK_StopInternalOscillator(CLOCK_SRC_INT_RC32KHZ);
+	
+	CLK.RTCCTRL &= ~CLK_RTCEN_bm;
+	
+}
+
+void RTC_GetMS(uint32_t* var)
+{
+	
+	// Make sure that synchronization is complete first
+	while (RTC.STATUS & RTC_SYNCBUSY_bm);
+	
+	*var = ((uint32_t)TCC0.CNT << 16) | RTC.CNT;
+	
+}
+
+
+void WDT_Start(void)
+{
+
+	WDT.CTRL = 0; 
+
+}
+
+
+/// Oscillator failure interrupt
+ISR(OSC_OSCF_vect)
+{
+	/// @BUG Needs to call Fatal.  Which, in turn, needs to be placed in a header.
+	// Halt
+	log_e("CRITICAL OSC FAILURE!");
+	while (1) {};
+}
+
+/// TCC0 overflow
+ISR(TCC0_OVF_vect)
+{
+	// Deal with the timestamp overflow to correctly continue
+	// Understanding samples remaining in the buffer.
+	
+	
+}
+
+/// TCC0 Error vector
+ISR(TCC0_ERR_vect)
+{
+	// Timer errors are critical, as timestamps are needed to interpret
+	// gestures, and determine latency.
+	
+}

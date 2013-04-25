@@ -1,0 +1,24 @@
+#include <avr/io.h>
+
+// ATXMEGA128A3U
+
+
+// Port A - GPIO
+
+// Port B - GPIO/JTAG
+#define STATUS_LED 0
+
+// Port C - IMU 1/2 (I2C - TWIC), Accelerometers (SPI)
+
+
+// Port D - SPI CS Addressing pins, USB 
+
+#define VBUS_DETECT	5		// PD5 - USB connection detect
+
+// Port E - IMU 3/4 (I2C - TWIE),  Optional 32.768 XTAL, 
+
+// SPIE
+
+
+// Port F - RN-42 Bluetooth (USARTF1)
+

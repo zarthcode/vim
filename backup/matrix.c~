@@ -1,0 +1,46 @@
+#include "matrix.h"
+#include <stdio.h>
+
+/// @TODO The invensese functions is the starting point for this library. However, the plan is to release using fixed-point operation. (if still on AVR)
+
+unsigned short orientation_matrix_to_scalar( const signed char *mtx)
+{
+
+	unsigned short scalar;
+
+	scalar = row_2_scale(mtx);
+	scalar |= row_2_scale(mtx+3) << 3;
+	scalar |= row_2_scale(mtx+6) << 6;
+	
+	return scalar;
+
+}
+
+
+
+unsigned short row_2_scale(const signed char *row)
+{
+
+	unsigned short b;
+
+	if (row[0] > 0)
+		b = 0;
+	else if (row[0] < 0)
+		b = 4;
+	else if (row[1] > 0)
+		b = 1;
+	else if (row[1] < 0)
+		b = 5;
+	else if (row[2] > 0)
+		b = 2;
+	else if (row[2] < 0)
+		b = 6;
+	else
+	{
+		b = 7;      // error
+		printf("row_2_scale - invalid input.\n");
+	}
+
+	return b;
+
+}

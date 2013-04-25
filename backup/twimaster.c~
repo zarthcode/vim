@@ -1,0 +1,554 @@
+#include "twimaster.h"
+#include "../ClockMgr.h"
+#include <stddef.h>
+#include <stdio.h>
+#include <avr/interrupt.h>
+
+#define 	TW_READ   1
+#define 	TW_WRITE   0
+
+#define		MAX_RETRIES 0
+
+/*
+#define TWI_ERROR
+#define TWI_INFO
+#define TWI_VERBOSE
+*/
+
+// Logging
+#ifdef TWI_VERBOSE
+	#define log_v(...) printf(__VA_ARGS__)
+#else
+	#define log_v(...) while(0) {};
+#endif
+
+
+#ifdef TWI_INFO
+	#define log_i(...) printf(__VA_ARGS__)
+#else
+	#define log_i(...) while(0) {};
+#endif
+
+
+#ifdef TWI_ERROR
+	#define log_e(...) printf(__VA_ARGS__)
+#else
+	#define log_e(...) while(0) {};
+#endif
+
+
+/// TWI states
+typedef enum twi_state_t
+{
+	TWI_STATE_IDLE,		// Initialized, waiting command.
+	TWI_STATE_OFF,		// TWI device not initialized, in powersave/powerdown mode.
+	TWI_STATE_WRITING,	// Write operation in progress.
+	TWI_STATE_READING,	// Read operation in progress.
+	TWI_STATE_ERROR,	// Bus/Transfer error.
+	TWI_STATE_FAULT		// Indicates a logic error in the twi master module.
+	
+} twi_state_t;
+
+/// TWI slave register state
+typedef enum twi_slave_reg_state_t
+{
+	
+	TWI_SLA_REG_DISABLED,	// Indicates that this operation doesn't need to transmit a slave address.
+	TWI_SLA_REG_ENABLED,	// Indicates that his operation must write a slave register address to the bus. 
+	TWI_SLA_REG_WRITTEN		// Indicates that the slave address has already been written to the bus.
+	
+} twi_slave_reg_state_t;
+
+/// TWI device state
+typedef struct twi_t
+{
+	TWI_t* twix;							// TWIx base address
+	twi_state_t state;						// Device usage state.	
+	
+	twi_slave_reg_state_t slave_reg_state;	// Slave register status.	
+	uint8_t slave_reg;						// 8bit slave register address.
+	
+	uint8_t slave_address;		// i2c slave address of the device being communicated with.
+	uint8_t length;				// Total amount of data to send/receive.
+	uint8_t position;			// Actual amount of data sent/received
+
+	uint8_t* readBuffer;		// Pointer to data being received.
+	const uint8_t* writeBuffer;	// Pointer to data being sent.
+	
+} twi_t; 
+
+
+volatile twi_t twic_state;	// State for twic
+volatile twi_t twie_state;	// State for twie
+
+
+
+volatile twi_t* getTWI(TWI_t* device);
+
+
+volatile twi_t* getTWI(TWI_t* device)
+{
+	if(device == &TWIC)
+		return &twic_state;
+	else if (device == &TWIE)
+		return &twie_state;
+			
+	return NULL;
+}
+
+void twi_init(TWI_t* device)
+{
+	volatile twi_t* twi_device = getTWI(device);
+
+	// Initialize the TWIx instance.
+	twi_device->twix = device;
+	
+	twi_device->state = TWI_STATE_OFF;
+	
+	twi_device->slave_reg_state = TWI_SLA_REG_DISABLED;
+	twi_device->slave_reg = 0;
+	
+	twi_device->slave_address = 0;
+	
+	twi_device->length = 0;
+	twi_device->position = 0;
+	
+	twi_device->readBuffer = NULL;
+	twi_device->writeBuffer = NULL;
+	
+}
+
+void twi_enable(TWI_t* device)
+{
+	volatile twi_t* instance = getTWI(device);
+	// Initialize baudrate to 100kHz
+	/// @todo - Configure for 400kHz operation.
+	
+	uint8_t baud = 0;
+	
+	switch (Clk_State())
+	{
+	case CLK_SLOW:
+		baud = 5;		// 5 for 400khz; 35 for 100khz
+		break;
+	case CLK_NORMAL:
+		baud = 15;		// 15 for 400khz; 75 for 100khz
+		break;
+	case CLK_PERFORMANCE:
+		baud = 35;		// 35 for 400khz; 155 for 100khz
+		break;
+	case CLK_USB:
+		baud = 35;		// 35 for 400khz; 155 for 100khz
+		break;
+	default:
+		/// @todo Fault condition.
+		log_e("TWI FAULT - Unrecognized system clock state.\n");
+		baud = 155;
+		break;
+	}
+	
+	instance->twix->MASTER.BAUD = baud;
+	
+	// Setup common control register (No SDA hold, normal TWI)
+	instance->twix->CTRL = 0;
+	
+	// Select interrupt level.  (CTRLA - XMEGA AU Manual pg 262)
+	instance->twix->MASTER.CTRLA = TWI_MASTER_INTLVL_MED_gc | TWI_MASTER_RIEN_bm | TWI_MASTER_WIEN_bm | TWI_MASTER_ENABLE_bm;
+	
+	// Select inactive bus, quick command, and smart mode (CTRLB, pg 262)
+	instance->twix->MASTER.CTRLB = (instance->twix->MASTER.CTRLB & ~TWI_MASTER_TIMEOUT_gm) | TWI_MASTER_TIMEOUT_DISABLED_gc;
+
+	// Force the bus into a known idle state.
+	instance->twix->MASTER.STATUS = (instance->twix->MASTER.STATUS & ~TWI_MASTER_BUSSTATE_gm) | TWI_MASTER_BUSSTATE_IDLE_gc;
+	
+	// All done!
+	instance->state = TWI_STATE_IDLE;
+}
+
+void twi_disable(TWI_t* device)
+{
+	
+	volatile twi_t* instance = getTWI(device);
+	
+	// Wait for pending transfer to complete.
+		
+	// Disable the twi device.
+	instance->twix->MASTER.CTRLA &= ~TWI_MASTER_ENABLE_bm;
+
+	instance->state = TWI_STATE_OFF;
+}
+
+void twi_write(TWI_t* device, unsigned char slave_addr, unsigned char length, unsigned char const *data)
+{
+	
+	volatile twi_t* instance = getTWI(device);
+	
+	while (instance->state != TWI_STATE_IDLE)
+	{
+		// Wait for the device to become available.
+		log_e("TWI waiting for idle...\n");
+
+	}
+	
+	if(instance->state != TWI_STATE_IDLE)	
+	{
+		return;
+	}
+	
+	// Setup the send.
+	instance->state = TWI_STATE_WRITING;
+	instance->slave_address = (slave_addr << 1) | TW_WRITE;
+	instance->length = length;
+	instance->writeBuffer = data;
+	instance->slave_reg_state = TWI_SLA_REG_DISABLED;
+	instance->readBuffer = NULL;
+	instance->position = 0;
+	
+	// Send a start condition by writing the address.
+	instance->twix->MASTER.ADDR = instance->slave_address;
+	
+	// Wait until the operation has finished.
+	while(instance->state == TWI_STATE_WRITING);
+	
+	if(instance->state != TWI_STATE_IDLE)
+	{
+		/// @TODO Add error handling/notification.
+		log_e("TWI - write - Error\n");
+		instance->state = TWI_STATE_IDLE;
+	}
+
+
+	
+	// return 0;
+		
+}
+
+uint8_t twi_write_reg(TWI_t* device, unsigned char slave_addr, unsigned char reg_addr, unsigned char length, unsigned char const *data)
+{
+
+	unsigned char numRetries = 0;
+	
+	volatile twi_t* instance = getTWI(device);
+
+	while (instance->state != TWI_STATE_IDLE)
+	{
+		/// @TODO Implemente a timeout function.  Or a TWI driver where multiple operations can share a bus.
+		// Wait for the device to become available.
+
+		switch(instance->state)
+		{
+			case TWI_STATE_FAULT:
+				// A bug was encountered.
+
+			case TWI_STATE_ERROR:
+				// Reenable the twi module.
+				log_e("TWI FAULT - Not IDLE state prior to starting operation. Resetting device.\n");
+				twi_disable(device);
+				twi_enable(device);
+				break;
+
+			default:
+				log_e("TWI WARNING - Blocked/Waiting to become available.(Unintentionally using TWI blocking.)\n");
+				break;
+		}
+
+	}
+	
+	do
+	{
+
+		// Setup the send.
+		instance->state = TWI_STATE_WRITING;
+		instance->slave_address = (slave_addr << 1) | TW_WRITE;
+		instance->length = length;
+		instance->writeBuffer = data;
+		instance->slave_reg_state = TWI_SLA_REG_ENABLED;
+		instance->slave_reg = reg_addr;
+		instance->readBuffer = NULL;
+		instance->position = 0;
+		
+		// Send a start condition by writing the address.
+		instance->twix->MASTER.ADDR = instance->slave_address;
+	
+		// Wait until the operation has finished.
+		while(instance->state == TWI_STATE_WRITING);
+		
+		switch(instance->state)
+		{
+			case TWI_STATE_FAULT:
+				// A bug was encountered.
+
+			case TWI_STATE_ERROR:
+				twi_disable(device);
+				twi_enable(device);
+				break;
+
+			default:
+				return instance->state;
+				break;
+		}
+
+	} while (numRetries++ < MAX_RETRIES);
+	
+	
+	log_e("FAULT - TWI WRITE REG - Retry structure.");
+	return TWI_STATE_FAULT;
+
+
+}
+
+void twi_read(TWI_t* device, unsigned char slave_addr, unsigned char length, unsigned char *data)
+{
+
+	volatile twi_t* instance = getTWI(device);
+	while (instance->state != TWI_STATE_IDLE)
+	{
+		// Wait for the device to become available.
+		log_e("TWI - Waiting to become available.\n");
+	}
+	
+	if(instance->state != TWI_STATE_IDLE)	
+	{
+		return;
+	}
+	
+	// Setup the send.
+	instance->state = TWI_STATE_READING;
+	instance->slave_address = (slave_addr << 1) | TW_READ;
+	instance->length = length;
+	instance->readBuffer = data;
+	instance->slave_reg_state = TWI_SLA_REG_DISABLED;
+	instance->slave_reg = 0;
+	instance->writeBuffer = NULL;
+	instance->position = 0;
+	
+	// Send a start condition by writing the address.
+	instance->twix->MASTER.ADDR = instance->slave_address;
+	
+	// Wait until the operation has finished.
+	while(instance->state == TWI_STATE_READING);
+	
+	if(instance->state != TWI_STATE_IDLE)
+	{
+		log_e("TWI - read - Error\n");
+		// Release the twi module.
+		instance->state = TWI_STATE_IDLE;
+	//	return TWI_STATE_ERROR;
+	}
+
+	// return instance->state == TWI_STATE_ERROR ? false : true;
+}
+
+uint8_t twi_read_reg(TWI_t* device, unsigned char slave_addr, unsigned char reg_addr, unsigned char length, unsigned char *data)
+{
+	uint8_t numRetries = 0;
+
+	volatile twi_t* instance = getTWI(device);
+
+	while (instance->state != TWI_STATE_IDLE)
+	{
+		/// @TODO Implemente a timeout function.  Or a TWI driver where multiple operations can share a bus.
+		// Wait for the device to become available.
+
+		switch(instance->state)
+		{
+			case TWI_STATE_FAULT:
+				// A bug was encountered.
+
+			case TWI_STATE_ERROR:
+				// Reenable the twi module.
+				log_e("TWI FAULT - Not IDLE state prior to starting operation. Resetting.\n");
+				twi_disable(device);
+				twi_enable(device);
+				break;
+
+			default:
+				log_e("TWI WARNING - Blocked/Waiting to become available.(Unintentionally using TWI blocking.)\n");
+				break;
+		}
+
+	}
+	
+	
+	do
+	{
+
+		// Setup the send.
+		instance->state = TWI_STATE_READING;
+		instance->slave_address = (slave_addr << 1) | TW_READ;
+		instance->length = length;
+		instance->readBuffer = data;
+		instance->slave_reg_state = TWI_SLA_REG_ENABLED;
+		instance->slave_reg = reg_addr;
+		instance->writeBuffer = NULL;
+		instance->position = 0;
+		
+		// Send a start condition by writing the address.
+		instance->twix->MASTER.ADDR = instance->slave_address;
+	
+		// Wait until the operation has finished.
+		while(instance->state == TWI_STATE_READING);
+		
+		switch(instance->state)
+		{
+			case TWI_STATE_FAULT:
+				// A bug was encountered.
+
+			case TWI_STATE_ERROR:
+				twi_disable(device);
+				twi_enable(device);
+				break;
+
+			default:
+				return instance->state;
+				break;
+		}
+
+	} while (numRetries++ < MAX_RETRIES);
+	
+	
+	log_e("FAULT - TWI WRITE REG - Retry structure.");
+	return TWI_STATE_FAULT;
+}
+
+/// ISR handler. Implements the same functions for all hardware devices.
+void twix_isr(volatile twi_t* instance);
+
+/// TWIC Master-mode Interrupt service routine
+ISR(TWIC_TWIM_vect)
+{
+	twix_isr(&twic_state);
+}
+
+/// TWIE Master-mode Interrupt service routine
+ISR(TWIE_TWIM_vect)	
+{
+	twix_isr(&twie_state);
+}
+
+
+/// Common ISR routine.
+void twix_isr(volatile twi_t* instance)
+{
+	/// @note refer to Atmel XMEGA AU Manual sec 21.5 (pg 257)
+
+	
+	// Check status of the read interrupt flag (RIF)
+	if(instance->twix->MASTER.STATUS & TWI_MASTER_RIF_bm)
+	{
+	
+		// We have received a byte of data
+		instance->readBuffer[instance->position++] = instance->twix->MASTER.DATA;
+		
+		// Determine if this was the last byte. 
+		if (instance->position == instance->length)
+		{
+			// NACK and then STOP
+			instance->twix->MASTER.CTRLC = TWI_MASTER_ACKACT_bm | TWI_MASTER_CMD_STOP_gc;
+			instance->state = TWI_STATE_IDLE;
+		} 
+		else
+		{
+			// ACK and then receive another byte.
+			instance->twix->MASTER.CTRLC = TWI_MASTER_CMD_RECVTRANS_gc;
+		}
+		
+		
+	}
+	else if (instance->twix->MASTER.STATUS & TWI_MASTER_WIF_bm)
+	{
+		// Ensure that there is no bus error.
+		if (instance->twix->MASTER.STATUS & TWI_MASTER_BUSERR_bm)
+		{
+			instance->state = TWI_STATE_ERROR;
+			instance->twix->MASTER.CTRLC |= TWI_MASTER_CMD_STOP_gc;
+			log_e("TWI - Bus Error.\n");
+			return;	
+		}
+		
+		// Ensure that a NACK wasn't received.
+		if (instance->twix->MASTER.STATUS & TWI_MASTER_RXACK_bm)
+		{
+			instance->state = TWI_STATE_ERROR;
+			instance->twix->MASTER.CTRLC |= TWI_MASTER_CMD_STOP_gc;
+			log_e("TWI - NACK received.\n\tinstance->length = %i, \n\tinstance->position = %i, \n\tinstance->slave_reg = %i, \n\tinstance->slave_reg_state = %i\n", instance->length, instance->position, instance->slave_reg, instance->slave_reg_state);
+			// If reading, this was an invalid device address.
+			// If writing, this could be anything.  We're stopping anyway.
+			return;
+		}
+		
+		// Address has already been written, determine what needs to be sent next.
+		switch (instance->slave_reg_state)
+		{
+		case TWI_SLA_REG_ENABLED:
+			// Transmit the register address.
+			instance->slave_reg_state = TWI_SLA_REG_WRITTEN;
+			instance->twix->MASTER.DATA = instance->slave_reg;
+			return;
+			break;
+			
+		case TWI_SLA_REG_DISABLED:
+		case TWI_SLA_REG_WRITTEN:
+			switch(instance->state)
+			{
+				case TWI_STATE_WRITING:
+					if (instance->position == instance->length)
+					{
+						// Operation complete, send STOP command.
+						instance->twix->MASTER.CTRLC |= TWI_MASTER_CMD_STOP_gc;
+						instance->state = TWI_STATE_IDLE;
+						return;
+					}
+					
+					// Write the next byte
+					{
+						instance->twix->MASTER.DATA = instance->writeBuffer[instance->position++];
+					}					
+					break;	
+					
+				case TWI_STATE_READING:
+					// The address has just been written and the slave register has been written, if needed.
+					// Begin reading
+					instance->twix->MASTER.CTRLC = TWI_MASTER_CMD_RECVTRANS_gc;
+					break;
+			
+				case TWI_STATE_ERROR:
+					// We shouldn't end up here.
+					log_e("TWI FAULT - twix (WIF) after error condition.");
+					break;
+
+				case TWI_STATE_IDLE:
+
+					log_e("TWI FAULT - twix (WIF) after idle condition. (Attempting reset.)");
+					twi_disable(instance->twix);
+					twi_enable(instance->twix);
+					break;
+				case TWI_STATE_FAULT:
+					log_e("TWI FAULT - twix (WIF) after fault condition.");
+					break;
+				default:
+					// Unrecognized path/condition.
+					log_e("TWI FAULT - UNRECOGNIZED STATE!\n"); 
+					instance->state = TWI_STATE_FAULT;
+					break;
+			}
+			break;
+		default:
+			// Unrecognized state
+			log_e("TWI - Unrecognized slave register state.\n");
+			instance->state = TWI_STATE_FAULT;
+			break;
+		}
+		
+		
+	}
+	else
+	{
+
+		log_e("TWI - twix interrupt without WIF/RIF set.\n");
+
+	}
+	
+	
+	
+}	

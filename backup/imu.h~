@@ -1,0 +1,31 @@
+#include <stdbool.h>
+#include <stdint.h>
+#include "quaternion.h"
+
+#pragma once
+
+// IMU data
+typedef struct {
+	short rawGyro[3];
+	short rawAccel[3];
+	long rawQuat[3];
+	uint32_t imuTimestamp;
+
+	uint16_t rawMag[3];
+	uint32_t magTimestamp;
+
+	uint16_t calibratedAccel;
+	uint16_t calibratedMag;
+
+	quaternion_t fusedQuat;
+	vector3d_t fusedEuler;
+
+	float lastDMPYaw;	/// @TODO This needs to be fixed-point
+	float lastYaw;
+
+} imudata_t;
+
+uint8_t imu_read(imudata_t *imu, bool bReadMagnetometer);
+
+bool imu_isOnline(void);
+

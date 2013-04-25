@@ -1,0 +1,23 @@
+#pragma once
+
+#include "vector.h"
+
+#define QUAT_W	0
+#define QUAT_X	1
+#define QUAT_Y	2
+#define QUAT_Z	3
+
+typedef float quaternion_t[4];
+
+void quat_norm(const quaternion_t* q, double *n);
+
+void quat_normalize(quaternion_t* q);
+
+void quat_toEuler(const quaternion_t* q, vector3d_t* v);
+
+void euler_toQuaternion(const vector3d_t* v, quaternion_t* q);
+
+void quat_conjugate(quaternion_t* s, quaternion_t* d);
+
+void quat_multiply(const quaternion_t* qa, const quaternion_t* qb, quaternion_t* qd);
+

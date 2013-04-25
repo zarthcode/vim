@@ -1,0 +1,120 @@
+#include "AccelMgr.h"
+#include "accel.h"
+#include "ClockMgr.h"
+#include "XMEGA/spimaster.h"
+#include <stdio.h>
+#include <avr/pgmspace.h>
+
+
+#define ACCEL_VERBOSE
+#define ACCEL_INFO
+#define ACCEL_ERROR
+
+// Logging
+#ifdef ACCEL_VERBOSE
+	#define log_v(...) printf_P(__VA_ARGS__)
+#else
+	#define log_v(...) while(0) {};
+#endif
+
+
+#ifdef ACCEL_INFO
+	#define log_i(...) printf_P(__VA_ARGS__)
+#else
+	#define log_i(...) while(0) {};
+#endif
+
+
+#ifdef ACCEL_ERROR
+	#define log_e(...) printf_P(__VA_ARGS__)
+#else
+	#define log_e(...) while(0) {};
+#endif
+
+
+// Sensors
+#define NUM_ACCEL 10		/// @BUG This isn't necessairly the correct number of accelerometers, just what I happen to have for evp2.
+
+
+
+accel_t accelerometer[NUM_ACCEL];
+
+// Global accelerometer update rate.
+uint16_t accel_freq;
+
+uint8_t Accel_Init(void)
+{
+
+	log_e(PSTR("Initializing accelerometers.\n"));
+	accel_freq = 1250;	// Hz
+
+
+	// For each sensor
+	for(uint8_t i = 0; i < NUM_ACCEL; i++)
+	{
+
+		if(!lis3dh_isWorking(i))
+		{
+
+			// Well, that sucks.
+			log_e(PSTR("LIS3DH (cs_addr %i) not responding.\n"), i);
+
+			/// @TODO Mark sensor as offline or degraded
+
+		}
+
+		// Initialize	
+ 		lis3dh_init(i);
+
+
+	}
+
+	// Setup interrupt monitor
+
+	// Finished.
+	return 1;
+
+}
+
+
+void Accel_Shutdown(void)
+{
+
+	// Disable interrupt monitor.
+
+
+
+}
+
+
+void Accel_Sleep(void)
+{
+
+	// Bring the chip into powerdown mode.
+
+}
+
+
+
+/// Accelerometer service
+void Accel_Service(void)
+{
+
+	for(int i = 0; i < NUM_ACCEL; i++)
+	{
+
+
+		// Initialize	
+		if(lis3dh_hasData(i))
+		{
+
+			// spi_reg_read(&SPIC, i, lis3dh_reg(OUT_X_L, true, true), 6, accelerometer[i].accel);
+			lis3dh_getData(i, &accelerometer[i]);
+			RTC_GetMS(&accelerometer[i].timestamp);
+			log_v(PSTR("Accelerometer[%i]\n\t.X = %i\n\t.Y = %i\n\t.Z = %i\n"), i, accelerometer[i].accel[VEC3_X], accelerometer[i].accel[VEC3_Y], accelerometer[i].accel[VEC3_Z] );
+
+		}
+
+	}
+
+}

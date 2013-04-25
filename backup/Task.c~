@@ -1,0 +1,43 @@
+
+#include "Task.h"
+#include <stdio.h>
+
+#define TASK_VERBOSE
+#define TASK_INFO
+#define TASK_ERROR
+
+// Logging
+#ifdef TASK_VERBOSE
+	#define log_v(...) printf(__VA_ARGS__)
+#else
+	#define log_v(...) while(0) {};
+#endif
+
+
+#ifdef TASK_INFO
+	#define log_i(...) printf(__VA_ARGS__)
+#else
+	#define log_i(...) while(0) {};
+#endif
+
+
+#ifdef TASK_ERROR
+	#define log_e(...) printf(__VA_ARGS__)
+#else
+	#define log_e(...) while(0) {};
+#endif
+
+
+void idleTask(uint8_t& flag, uint8_t& mask)
+{
+
+	// Continue the current task.
+
+
+
+	// Task is finished
+
+	// 
+
+
+}

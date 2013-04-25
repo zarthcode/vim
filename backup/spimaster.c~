@@ -1,0 +1,515 @@
+/*
+ * spimaster.c
+ *
+ * Created: 2/19/2013 7:16:46 PM
+ *  Author: Anthony
+ */ 
+#include "spimaster.h"
+#include <avr/interrupt.h>
+#include <stdio.h>
+#include <avr/pgmspace.h>
+
+
+// Logging
+#ifdef SPI_VERBOSE
+	#define log_v(...) printf(__VA_ARGS__)
+#else
+	#define log_v(...) while(0) {};
+#endif
+
+
+#ifdef SPI_INFO
+	#define log_i(...) printf(__VA_ARGS__)
+#else
+	#define log_i(...) while(0) {};
+#endif
+
+
+#ifdef SPI_ERROR
+	#define log_e(...) printf(__VA_ARGS__)
+#else
+	#define log_e(...) while(0) {};
+#endif
+
+typedef enum
+{
+	SPI_STATE_OFF,
+	SPI_STATE_IDLE,
+	SPI_STATE_TX,
+	SPI_STATE_RX,
+	SPI_STATE_ERROR,
+	SPI_STATE_FAULT
+} spi_state_t;
+
+typedef enum
+{
+	SPI_SLA_REG_DISABLED,
+	SPI_SLA_REG_ENABLED,
+	SPI_SLA_REG_WRITTEN
+} spi_slave_register_state_t;
+
+typedef struct
+{
+	SPI_t* spix;
+	spi_state_t state;
+	uint8_t cs_addr;
+	const uint8_t* writeBuffer;
+	uint8_t* readBuffer;	
+	uint16_t length;
+	uint16_t position;
+	spi_slave_register_state_t reg_state;
+	uint8_t reg_addr;
+} spi_instance_t;
+
+volatile spi_instance_t spic_inst;
+volatile spi_instance_t spid_inst;
+volatile spi_instance_t spie_inst;
+
+volatile spi_instance_t* getSPI(SPI_t* device);
+
+volatile spi_instance_t* getSPI(SPI_t* device)
+{
+	if(device == &SPIC)	
+	{
+		return &spic_inst;
+	}
+	else if(device == &SPID)	
+	{
+		return &spid_inst;
+	}
+	else if(device == &SPIE)	
+	{
+		return &spie_inst;
+	}
+	
+	return 0;
+}
+
+void spi_init(SPI_t* device)
+{
+	volatile spi_instance_t* inst = getSPI(device);
+	
+	inst->state = SPI_STATE_OFF;
+	inst->spix = device;
+
+	inst->cs_addr = 0;	
+	inst->readBuffer = 0;
+	inst->writeBuffer = 0;
+	
+	inst->reg_addr = 0;
+	inst->reg_state = SPI_SLA_REG_DISABLED;
+	
+	inst->length = 0;
+	inst->position = 0;
+
+	if (device == &SPIC)
+	{
+		// Set pin directions.
+		PORTC.DIRSET = 0xB0;
+		
+		// Configure CS Port
+		PORTD.DIR = 0x1F;
+		PORTD.OUT = 0x10;
+	}
+	if (device == &SPID)
+	{
+		/// @TODO SPID is not available in this design (USB).	
+	}
+	else if (device == &SPIE)
+	{
+		// SPIE debug message port
+		PORTE.DIRSET = 0xB0;
+		PORTE.OUT = 0x10;
+	}
+			
+}
+
+void spi_enable(SPI_t* device)
+{
+	
+	volatile spi_instance_t* inst = getSPI(device);
+	
+	// Setup the control register.
+	inst->spix->CTRL = SPI_ENABLE_bm | SPI_MASTER_bm | SPI_MODE_0_gc | SPI_PRESCALER_DIV4_gc;
+	
+	// Setup the interrupt control register.
+	inst->spix->INTCTRL = SPI_INTLVL_HI_gc;
+	
+	inst->state = SPI_STATE_IDLE;
+	spi_cs_clear(device);
+	
+}
+
+
+void spi_disable(SPI_t* device)
+{
+	
+	volatile spi_instance_t* inst = getSPI(device);
+
+	
+	// Turn off the module and all options.
+	inst->spix->CTRL = 0; 
+
+	spi_cs_clear(device);
+	inst->state = SPI_STATE_OFF;	
+	
+}
+
+
+void spi_wait(SPI_t* device)
+{
+	
+	volatile spi_instance_t* inst = getSPI(device);
+
+	while((inst->state == SPI_STATE_RX) || (inst->state == SPI_STATE_TX));
+
+	switch(inst->state)
+	{
+		case SPI_STATE_ERROR:
+		case SPI_STATE_FAULT:
+
+			spi_disable(device);
+		
+		case SPI_STATE_OFF:
+
+			spi_enable(device);
+			break;
+
+		default:
+			// Fatal?
+			break;
+
+	}
+	
+	
+}
+
+
+void spi_cs_addr(SPI_t* device, uint8_t address)
+{
+	/// \note CS implementation is design specific.
+	if (device == &SPIC)
+	{
+
+		// Clear active cs.
+		PORTD.OUTSET = 0x10;
+		
+		// Output to the 74HC154 to select the chip.
+		PORTD.OUTSET = address & 0x0F;
+
+		/// @TODO Optional delay?
+
+		// Set output.
+		PORTD.OUTCLR = 0x10;
+
+	}
+	else if (device == &SPID)
+	{
+		
+		// SPID is not used in this design.
+
+	}
+	else if (device == &SPIE)
+	{
+		
+		PORTE.OUTCLR = 0x10;
+
+	}
+	
+}	
+
+
+void spi_cs_clear(SPI_t* device)
+{
+	
+	if (device == &SPIC)
+	{
+
+		// Clear active cs.
+		PORTD.OUTSET = 0x10;
+		PORTD.OUTCLR = 0x0F;
+			
+	}
+	else if (device == &SPID)
+	{
+		
+		
+	}
+	else if (device == &SPIE)
+	{
+		
+		PORTE.OUTSET = 0x10;
+		
+	}
+	
+}
+
+
+uint8_t spi_reg_write(	SPI_t* device, uint8_t cs_addr, uint8_t reg_addr, uint8_t length, const uint8_t* writeBuffer)
+{
+
+	volatile spi_instance_t* inst = getSPI(device);
+	
+	spi_wait(device);
+	
+	if(inst->state != SPI_STATE_IDLE)
+	{
+		return 1;	// Failure
+	}
+	
+	inst->state = SPI_STATE_TX;
+	
+	// Setup chip select.
+	spi_cs_addr(device, cs_addr);
+	
+	// Setup the transfer
+	inst->cs_addr = cs_addr;
+	inst->reg_addr = reg_addr;
+	inst->reg_state = SPI_SLA_REG_ENABLED;
+	
+	inst->length = length;
+	inst->position = 0;
+	
+	inst->writeBuffer = writeBuffer;
+	inst->readBuffer = 0;
+	
+	
+	// Send the register address.
+	inst->spix->DATA = inst->reg_addr;
+	
+	spi_wait(device);
+	
+	if (inst->state != SPI_STATE_IDLE)
+	{
+		/// @TODO Add logging here.
+		log_e(PSTR("SPI State(%i)\n"), inst->state);
+		return inst->state;
+	}
+	
+	return 0;
+		
+}
+
+
+uint8_t spi_reg_read(	SPI_t* device, uint8_t cs_addr, uint8_t reg_addr, uint8_t length, uint8_t* readBuffer)
+{
+	
+	volatile spi_instance_t* inst = getSPI(device);
+	
+	spi_wait(device);
+	
+	if(inst->state != SPI_STATE_IDLE)
+	{
+		return 1;	// Failure
+	}
+	
+	inst->state = SPI_STATE_RX;
+	
+	// Setup chip select.
+	spi_cs_addr(device, cs_addr);
+	
+	// Setup the transfer
+	inst->cs_addr = cs_addr;
+	inst->reg_addr = reg_addr;
+	inst->reg_state = SPI_SLA_REG_ENABLED;
+	
+	inst->length = length;
+	inst->position = 0;
+	
+	inst->writeBuffer = 0;
+	inst->readBuffer = readBuffer;
+	
+	// Send the register address.
+	inst->spix->DATA = inst->reg_addr;
+	
+	spi_wait(device);
+	
+	if (inst->state != SPI_STATE_IDLE)
+	{
+		/// @TODO Add logging here.
+		log_e(PSTR("SPI State(%i)\n"), inst->state);
+		return inst->state;
+	}
+	
+	return 0;
+}
+
+
+uint8_t spi_write(	SPI_t* device, uint8_t cs_addr, uint8_t length, const uint8_t* writeBuffer)
+{
+	
+	volatile spi_instance_t* inst = getSPI(device);
+	
+	spi_wait(device);
+	
+	if(inst->state != SPI_STATE_IDLE)
+	{
+		return 1;	// Failure
+	}
+	
+	inst->state = SPI_STATE_TX;
+	
+	// Setup chip select.
+	spi_cs_addr(device, cs_addr);
+	
+	// Setup the transfer
+	inst->cs_addr = cs_addr;
+	inst->reg_addr = 0;
+	inst->reg_state = SPI_SLA_REG_DISABLED;
+	
+	inst->length = length;
+	inst->position = 0;
+	
+	inst->writeBuffer = writeBuffer;
+	inst->readBuffer = 0;
+	
+	// Send the first byte.
+	if(inst->length > 0)
+	{
+		inst->spix->DATA = inst->writeBuffer[inst->position++];
+	}
+	
+	spi_wait(device);
+	
+	if (inst->state != SPI_STATE_IDLE)
+	{
+		/// @TODO Add logging here.
+		log_e(PSTR("SPI State(%i)\n"), inst->state);
+		return inst->state;
+	}
+	
+	return 0;
+} 
+
+uint8_t spi_read(SPI_t* device, uint8_t cs_addr, uint8_t length, uint8_t* readBuffer)
+{
+	
+	volatile spi_instance_t* inst = getSPI(device);
+	
+	spi_wait(device);
+	
+	if(inst->state != SPI_STATE_IDLE)
+	{
+		return 1;	// Failure
+	}
+	
+	inst->state = SPI_STATE_RX;
+	
+	// Setup chip select.
+	spi_cs_addr(device, cs_addr);
+	
+	// Setup the transfer
+	inst->cs_addr = cs_addr;
+	inst->reg_addr = 0;
+	inst->reg_state = SPI_SLA_REG_DISABLED;
+	
+	inst->length = length;
+	inst->position = 0;
+	
+	inst->writeBuffer = 0;
+	inst->readBuffer = readBuffer;
+	
+	// Send the first dummy byte.
+	inst->spix->DATA = 0xFF;
+
+	spi_wait(device);
+	
+	if (inst->state != SPI_STATE_IDLE)
+	{
+		/// @TODO Add logging here.
+		log_e(PSTR("SPI State(%i)\n"), inst->state);
+		return inst->state;
+	}
+	
+	return 0;
+	
+		
+}	
+					
+/// SPI interrupt vector handler
+void spix_isr(volatile spi_instance_t* inst);
+
+/// SPIC interrupt vector.
+ISR(SPIC_INT_vect)
+{
+	spix_isr(&spic_inst);
+}
+
+/// SPID interrupt vector.
+ISR(SPID_INT_vect)
+{
+	spix_isr(&spid_inst);
+}
+
+/// SPIE interrupt vector.
+ISR(SPIE_INT_vect)
+{
+	spix_isr(&spie_inst);
+}
+
+void spix_isr(volatile spi_instance_t* inst)
+{
+	
+	// Make sure there was no write collision.
+	if (inst->spix->STATUS & SPI_WRCOL_bm)
+	{
+		inst->state = SPI_STATE_FAULT;
+		return;	
+	}
+	
+	if (inst->reg_state == SPI_SLA_REG_ENABLED)
+	{
+		// Register address was just successfully written.
+		inst->reg_state = SPI_SLA_REG_WRITTEN;
+		
+		if (inst->state == SPI_STATE_RX)
+		{
+			// Send the first dummy byte.
+			inst->spix->DATA = 0xFF;
+			return;
+		}
+	} 
+	
+	// Read/Write the next data byte.
+	switch (inst->state)
+	{
+	case SPI_STATE_TX:
+		
+		if (inst->position == inst->length)
+		{
+			// Done.
+			spi_cs_clear(inst->spix);
+			inst->state = SPI_STATE_IDLE;
+			return;
+		}
+		else
+		{
+			// Transmit the next data byte.
+			inst->spix->DATA = inst->writeBuffer[inst->position++];
+		}
+		
+		break;
+	case SPI_STATE_RX:
+		
+		inst->readBuffer[inst->position++] = inst->spix->DATA;
+		
+		if (inst->position == inst->length)
+		{
+			// That was the last byte.
+			spi_cs_clear(inst->spix);	
+			inst->state = SPI_STATE_IDLE;
+		}
+		else
+		{
+			// Write a dummy byte.
+			/// @TODO - implement simultaneous read/write.
+			inst->spix->DATA = 0xFF;
+		}
+		break;
+	default:
+		// Unknown state
+		spi_cs_clear(inst->spix);
+		inst->state = SPI_STATE_FAULT;
+		break;
+	}
+}

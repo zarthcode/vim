@@ -1,0 +1,63 @@
+/**
+ * @file ClockMgr.h
+ * @brief Clock management methods.
+ * @author Anthony Clay, ZarthCode LLC
+ * @version 1
+ * @date 2013-02-13
+ */
+
+
+#include <avr/io.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+typedef enum {
+
+	CLK_INIT,			/// Initial clock state on startup.
+	CLK_SLOW,			/// Low CPU speed (8MHz)
+	CLK_NORMAL,			/// Normal CPU speed (16MHz)
+	CLK_PERFORMANCE,	/// Full CPU speed (32MHz).
+	CLK_USB				/// USB Mode.  32MHz internal osc (forced), 48MHz PLL.
+
+} clockstate_t;
+
+/**
+ * @brief Performs startup initialization of the clock state machine.
+ */
+bool Clk_Initialize(void);
+
+/**
+ * @brief Changes the clock to the requested state
+ *
+ * @param state clockstate_t to switch to.
+ *
+ * @return TRUE on success
+ */
+bool Clk_SetState(clockstate_t state);
+
+/**
+ * @brief Returns the current clock state.
+ *
+ * @return clockstate_t representing the state of the clock.
+ */
+clockstate_t Clk_State(void);
+
+
+/**
+ * @brief Starts the RTC in 16 bit mode
+ *
+ */
+void RTC_Start(void);
+
+/**
+ * @brief Stops the RTC
+ *
+ */
+void RTC_Stop(void);
+
+/**
+ * @brief Returns the current value of the RTC clock
+ *
+ * @return uint32_t representing the current timestamp.
+ */
+void RTC_GetMS(uint32_t* var);

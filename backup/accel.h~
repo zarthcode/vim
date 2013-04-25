@@ -1,0 +1,32 @@
+/**
+ * @file accel.h
+ * @brief LIS3DH driver
+ * @author Anthony Clay, ZarthCode LLC
+ * @version 1.00
+ * @date 2013-04-18
+ */
+#include <stdint.h>
+#include <stdbool.h>
+#include "Math/vector.h"
+
+typedef struct {
+	int16_t accel[3];
+	uint32_t timestamp;
+} accel_t;
+
+	
+
+
+/// Initialize the device
+void lis3dh_init(uint8_t cs_addr);
+
+uint8_t lis3dh_reg(uint8_t address, bool read, bool multiple);
+
+/// Check for new data
+bool lis3dh_hasData(uint8_t cs_addr);
+
+/// Returns TRUE if the device passes the WHO_AM_I query
+bool lis3dh_isWorking(uint8_t cs_addr);
+
+/// Get data
+void lis3dh_getData(uint8_t cs_addr, accel_t* data);

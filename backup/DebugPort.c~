@@ -1,0 +1,43 @@
+#include "DebugPort.h"
+#include "XMEGA/spimaster.h"
+
+#include <stdio.h>
+
+
+SPI_t * debugSPIPort = 0;
+uint8_t debugAddress = 1;
+
+static int spi_putchar(char c, FILE *stream);
+static FILE spistdout = FDEV_SETUP_STREAM(spi_putchar, 0, _FDEV_SETUP_WRITE);
+
+
+void InitSPIDbg(SPI_t* device, uint8_t address)
+{
+
+	debugSPIPort = device;
+	debugAddress = address;
+
+	stdout = &spistdout;
+
+}
+
+static int spi_putchar(char c, FILE *stream)
+{
+
+	if(c == '\n')
+		spi_putchar('\r', stream);
+
+	unsigned char charstr[] = "\n";
+	charstr[0] = c;
+	charstr[1] = '\n';
+
+	if(spi_write(debugSPIPort, debugAddress, 1, charstr))
+	{
+		// SPI port is having an issue.
+		PORTB.OUTCLR = 0x03;
+		return 1;
+	}
+
+	return 0;
+
+}

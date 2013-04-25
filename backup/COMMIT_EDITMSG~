@@ -1,0 +1,35 @@
+BUGS
+====
+* On IMU initialize failure, we reset the device via Fatal().  The IMU can now be reset independently.
+* IMU seems to fill it's fifo, and then fall out of alignment.  The following 3 reads are then bogus - and suspiciously consistent.
+
+Changes (4/18/13)
+=================
+
+* MPU Device is now powered via PB3.  This has lead to greatly-improved reliability in startup.
+* Implement DMP quaternion (6-axis)
+* Remove printf calls in favor or informational/error macros.
+    * log_e for errors
+    * log_i for informational
+    * log_v for verbose
+    * File-level debug messaging (include guard-like)
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+# On branch master
+# Your branch is ahead of 'origin/master' by 1 commit.
+#
+# Changes to be committed:
+#   (use "git reset HEAD^1 <file>..." to unstage)
+#
+#	modified:   DMP/IMUMgr.c
+#	modified:   DMP/IMUMgr.h
+#	modified:   DMP/imu.c
+#	modified:   DMP/imu.h
+#	modified:   DMP/inv_mpu_dmp_motion_driver.c
+#	modified:   DekaFlex.c
+#	modified:   TODO-FIRMWARE
+#	new file:   Task.c
+#	new file:   Task.h
+#	modified:   XMEGA/twimaster.c
+#

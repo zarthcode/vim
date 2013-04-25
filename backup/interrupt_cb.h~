@@ -1,0 +1,8 @@
+
+
+#include <stdint.h>
+#include <stdbool.h>
+
+#include <avr/io.h>
+
+int xmega_reg_int_cb( uint8_t int_num, void (*cb)(void), PORT_t* port, uint8_t pin, bool lp_exit, bool active_low);

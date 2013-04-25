@@ -1,0 +1,253 @@
+/*
+ * DekaFlex.c
+ *
+ * Created: 2/12/2013 5:45:53 PM
+ *  Author: Anthony
+ */ 
+
+#include <stddef.h>
+#include <avr/io.h>
+#include <util/delay.h>
+#include <avr/interrupt.h>
+#include <avr/pgmspace.h>
+#include "Pinout.h"
+#include "ClockMgr.h"
+#include "LUFA/Common/Common.h"
+#include "LUFA/Drivers/USB/USB.h"
+#include "LUFA/Platform/XMEGA/ClockManagement.h"
+#include "XMEGA/twimaster.h"
+#include "XMEGA/spimaster.h"
+#include "DebugPort.h"
+
+#include "DMP/IMUMgr.h"
+#include "DMP/imu.h"
+#include "inv_mpu.h"	// Invensense MPU API
+#include "inv_mpu_dmp_motion_driver.h"
+#include "Accel/AccelMgr.h"
+
+
+#define DEKAFLEX_VERBOSE
+#define DEKAFLEX_INFO
+#define DEKAFLEX_ERROR
+
+// Logging
+#ifdef DEKAFLEX_VERBOSE
+	#define log_v(...) printf_P(__VA_ARGS__)
+#else
+	#define log_v(...) while(0) {};
+#endif
+
+
+#ifdef DEKAFLEX_INFO
+	#define log_i(...) printf(__VA_ARGS__)
+#else
+	#define log_i(...) while(0) {};
+#endif
+
+
+#ifdef DEKAFLEX_ERROR
+	#define log_e(...) printf(__VA_ARGS__)
+#else
+	#define log_e(...) while(0) {};
+#endif
+
+/// GPIO initialization.
+void Init_GPIO(void);
+
+
+extern imudata_t primaryIMU;
+
+/**
+ * @brief Restart the firmware.
+ */
+void Fatal(void);
+
+
+int main(void)
+{
+
+	// Initialize GPIO
+	Init_GPIO();
+
+	// Set user status light
+	PORTB.OUTSET = 0x02;
+
+	// PMIC configuration
+	PMIC.CTRL = PMIC_HILVLEN_bm | PMIC_MEDLVLEN_bm | PMIC_LOLVLEN_bm;
+	
+	
+	Clk_Initialize();	
+
+	
+	// Startup delay
+	_delay_ms(250);
+
+	spi_init(&SPIC);
+	spi_enable(&SPIC);
+	
+	spi_init(&SPIE);
+	spi_enable(&SPIE);
+
+	twi_init(&TWIC);
+	twi_enable(&TWIC);
+
+	sei();
+		
+
+	InitSPIDbg(&SPIE, 1);
+
+	// Check reset status
+	if(RST.STATUS & RST_PDIRF_bm)
+	{
+
+		log_i(PSTR("PDI Reset detected.\n"));
+
+		// No point, there's another reset coming.
+		while(1);
+
+	}
+	else if(RST.STATUS & RST_SRF_bm)
+	{
+		log_i(PSTR("Software Reset detected.\n"));
+	}
+	
+	// Enable the RTC clock.
+	RTC_Start();
+
+	// Initialize the MPU
+
+	_delay_ms(10);
+	// Initialize accelerometers
+	log_v(PSTR("Dekaflex Initializing...\n"));
+
+	if(!Accel_Init())
+	{
+		log_e(PSTR("Accelerometer array initialization failed.\n"));
+		// We can't go on without these. 
+		Fatal();
+	}
+
+	if(IMU_Init() == false)
+	{
+		log_e(PSTR("IMU Initialization failed.\n"));
+		// We can't go on with an IMU in an unknown state.
+		Fatal();
+	}
+
+	// Enable the "online" light.
+	PORTB.OUTSET = 0x01;
+	log_i(PSTR("DekaFlex Initialized.\n"));
+
+
+
+	// Set output on PORTA
+	while(1)
+	{
+
+		/// @TODO - Put application main loop here.
+
+		// Check for hardware insertion (secondary IMU)
+		
+		// Refresh IMU 
+	
+		// Refresh Accelerometers
+
+		// Calculate latest skeletal model
+
+		// HID service
+
+		// RAW service
+
+		// Bluetooth
+		// USB
+
+
+		/// @TODO Watchdog service every frame.
+	
+	}
+
+
+}
+
+void Init_GPIO()
+{
+	/// \todo
+		// Vibrate/Motor
+		// IMU interrupts
+		// Accelerometer interrupts
+		// Status LED
+
+	// Port A - GPIO
+
+
+	// Port B - GPIO
+	PORTB.DIR = 0x0F;
+	PORTB.OUT = 0x08;
+
+	PORTCFG.MPCMASK = 0x0F;
+	PORTB.PIN0CTRL = PORT_OPC_WIREDOR_gc;
+
+	// PB0 - LED0
+	// PB1 - LED1 (Green)
+	// PB2 - LED1 (Red)
+
+	// Port C - IMU 1/2 (I2C - TWIC), Accelerometers (SPIC)
+							// PC2 - IMU 1 interrupt (async)
+	PORTC.DIRCLR = 0x0C;	// PC3 - IMU 2 interrupt (sync)
+
+	// Port D - USARTD0 USB
+
+		/**
+		 * @todo Consider implementing a "slimmer" chip-select.
+		 * it should be possible to use the actual SPI hardware
+		 * along with a serial-loaded line selector to use one pin
+		 * as both the select and strobe outputs.  Reducing usage of
+		 * Port D
+		 */
+		// Configure Port D bits 0-4 as output.
+		// PD0 - PD3 are the address bits.
+		// PD4 is the CS strobe.
+
+	// USARTD0_RTS  0		// PD0 - RTS flow control
+	// USARTD0_CTS  4		// PD4 - CTS flow control
+	// VBUS_DETECT	5		// PD5 - USB connection detect
+
+	// Port E - IMU 3/4 (I2C - TWIE)
+	// External clock (32.768khz) is on PE6-7
+
+
+	// Port F - RN-42 Bluetooth (USARTF0)
+	
+	// 56, 57 PDI - (Reset disabled)
+	
+	/// @TODO Disable unused pins to save power.
+
+
+}
+
+
+void Fatal(void)
+{
+	log_e(PSTR("Restarting...\n"));
+
+	// No more interrupts!
+	cli();
+
+	PORTB.OUTSET = 0x0F;
+
+	// Show a fast flash for a couple seconds.
+	for(int i=0; i < 12; i++)
+	{
+
+		PORTB.OUTTGL = 0x0F;
+		_delay_ms(250);
+
+	}
+
+	// Restart
+	XMEGACLK_CCP_Write(&RST.CTRL, 0x01);
+
+
+}
+
+

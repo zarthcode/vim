@@ -1,0 +1,327 @@
+#include <SaleaeDeviceApi.h>
+
+#include <memory>
+#include <iostream>
+#include <string>
+#include <cmath>
+
+using namespace std;
+
+void __stdcall OnConnect( U64 device_id, GenericInterface* device_interface, void* user_data );
+void __stdcall OnDisconnect( U64 device_id, void* user_data );
+void __stdcall OnReadData( U64 device_id, U8* data, U32 data_length, void* user_data );
+void __stdcall OnWriteData( U64 device_id, U8* data, U32 data_length, void* user_data );
+void __stdcall OnError( U64 device_id, void* user_data );
+
+#define USE_LOGIC_16 0
+
+#if( USE_LOGIC_16 )
+	Logic16Interface* gDeviceInterface = NULL;
+#else
+	LogicInterface* gDeviceInterface = NULL;
+#endif
+
+U64 gLogicId = 0;
+U32 gSampleRateHz = 24000000;
+U8 gClockPin = 3;
+U8 gClockPinMask = 8; // pow(2.0, gClockPin);
+U8 gFrameSyncPin = 0;
+U8 gFrameSyncPinMask = 1; // pow(2.0, gFrameSyncPin);
+U8 gDataInPin = 1;
+U8 gDataInPinMask = 2; // pow(2.0, gDataInPin);
+U8 gDataOutPin = 1;
+U8 gDataOutPinMask = 2; // pow(2.0, gDataOutPin);
+bool gPrintDataIn = true;
+
+enum State
+{
+    StateUnknown = 0,
+    StateLocateFrameSyncHigh = 1,
+    StateLocateFrameSyncFallingEdge = 2,
+    StateLocateClockLow = 3,
+    StateLocateClockRisingEdge = 4
+};
+State gState = StateUnknown;
+S8 gWordLengthInBits = 8;
+S8 gBitCount = gWordLengthInBits - 1;
+U8 gDataIn = 0;
+U8 gDataOut = 0;
+U8 gWordsInFrame = 1;
+U8 gWordCount = 0;
+U32 gSampleCount = 0;
+
+int main( int argc, char *argv[] )
+{
+	DevicesManagerInterface::RegisterOnConnect( &OnConnect );
+	DevicesManagerInterface::RegisterOnDisconnect( &OnDisconnect );
+	DevicesManagerInterface::BeginConnect();
+
+	std::cout << std::uppercase << "Devices are currently set up to read and write at " << gSampleRateHz << " Hz.  You can change this in the code." << std::endl;
+
+	while( true )
+	{
+#if( USE_LOGIC_16 )
+		std::cout << std::endl << std::endl << "You can type read, stop, or exit." << std::endl << "(r, s, and e for short)" << std::endl << std::endl;
+#else
+		std::cout << std::endl << std::endl << "You can type read, write, readbyte, writebyte, stop, or exit." << std::endl << "(r, w, rb, wb, s, and e for short)" << std::endl << std::endl;
+#endif
+		std::string command;
+		std::getline( std::cin, command );
+
+		if( command == "exit" || command == "e" )
+			break;
+
+		if( command == "" )
+			continue;
+
+		if( gDeviceInterface == NULL )
+		{
+			std::cout << "Sorry, no devices are connected." << std::endl;
+			continue;
+		} 
+
+		if( command == "stop" || command == "s" )
+		{
+			if( gDeviceInterface->IsStreaming() == false )
+				std::cout << "Sorry, the device is not currently streaming." << std::endl;
+			else
+				gDeviceInterface->Stop();
+
+			continue;
+		}
+
+		if( gDeviceInterface->IsStreaming() == true )
+		{
+			std::cout << "Sorry, the device is already streaming." << std::endl;
+			continue;
+		}
+
+		if( command == "read" || command == "r" )
+		{
+			gDeviceInterface->ReadStart();
+		}
+		else
+		if( command == "write" || command == "w" )
+		{	
+#if( USE_LOGIC_16 )
+			std::cout << "Sorry, output mode is not supported for Logic16" << std::endl;
+			continue;
+#else
+			gDeviceInterface->WriteStart();
+#endif
+			
+		}
+		else
+		if( command == "readbyte" || command == "rb" )
+		{
+
+#if( USE_LOGIC_16 )
+			std::cout << "Sorry, reading a single value is not currently supported for Logic16" << std::endl;
+			continue;
+#else
+			std::cout << "Got value 0x" << std::hex << U32( gDeviceInterface->GetInput() ) << std::dec << std::endl;
+#endif
+			
+		}
+		else
+		if( command == "writebyte" || command == "wb" )
+		{
+
+#if( USE_LOGIC_16 )
+			std::cout << "Sorry, output mode is not supported for Logic16" << std::endl;
+			continue;
+#else
+			static U8 write_val = 0;
+
+			gDeviceInterface->SetOutput( write_val );
+			std::cout << "Logic is now outputting 0x" << std::hex << U32( write_val ) << std::dec << std::endl;
+			write_val++;
+#endif
+
+
+		}
+	}
+
+	return 0;
+}
+
+void __stdcall OnConnect( U64 device_id, GenericInterface* device_interface, void* user_data )
+{
+#if( USE_LOGIC_16 )
+
+	if( dynamic_cast<Logic16Interface*>( device_interface ) != NULL )
+	{
+		std::cout << "A Logic16 device was connected (id=0x" << std::hex << device_id << std::dec << ")." << std::endl;
+
+		gDeviceInterface = (Logic16Interface*)device_interface;
+		gLogicId = device_id;
+
+		gDeviceInterface->RegisterOnReadData( &OnReadData );
+		gDeviceInterface->RegisterOnWriteData( &OnWriteData );
+		gDeviceInterface->RegisterOnError( &OnError );
+
+		U32 channels[16];
+		for( U32 i=0; i<16; i++ )
+			channels[i] = i;
+
+		gDeviceInterface->SetActiveChannels( channels, 16 );
+		gDeviceInterface->SetSampleRateHz( gSampleRateHz );
+	}
+
+#else
+
+	if( dynamic_cast<LogicInterface*>( device_interface ) != NULL )
+	{
+		std::cout << "A Logic device was connected (id=0x" << std::hex << device_id << std::dec << ")." << std::endl;
+
+		gDeviceInterface = (LogicInterface*)device_interface;
+		gLogicId = device_id;
+
+		gDeviceInterface->RegisterOnReadData( &OnReadData );
+		gDeviceInterface->RegisterOnWriteData( &OnWriteData );
+		gDeviceInterface->RegisterOnError( &OnError );
+
+		gDeviceInterface->SetSampleRateHz( gSampleRateHz );
+	}
+
+#endif
+}
+
+void __stdcall OnDisconnect( U64 device_id, void* user_data )
+{
+	if( device_id == gLogicId )
+	{
+		std::cout << "A device was disconnected (id=0x" << std::hex << device_id << std::dec << ")." << std::endl;
+		gDeviceInterface = NULL;
+	}
+}
+
+void OnReadData( U64 device_id, U8* data, U32 data_length, void* user_data )
+{
+    //cout << "Read " << data_length << " bytes, starting with 0x"
+    //    << hex << (int)*data << dec << endl;
+ 
+    for (U32 i = 0; i < data_length; i++)
+    {
+        gSampleCount++;
+
+        switch(gState)
+        {
+        case StateUnknown:
+            if ((data[i] & gFrameSyncPinMask) == 0)
+            {
+                gState = StateLocateFrameSyncHigh;
+            }
+            else
+            {
+                gState = StateLocateFrameSyncFallingEdge;
+            }
+            break;
+        case StateLocateFrameSyncHigh:
+            if ((data[i] & gFrameSyncPinMask) != 0)
+            {
+                gState = StateLocateFrameSyncFallingEdge;
+            }
+            break;
+        case StateLocateFrameSyncFallingEdge:
+            if ((data[i] & gFrameSyncPinMask) == 0)
+            {
+                // at sample rates that are four times or less than the clock,
+                // the frame sync and clock could be slightly out of sync,
+                // clock may already be high, we cannot wait for next sample
+                // to search for falling edge of the clock
+                if ((data[i] & gClockPinMask) == 0)
+                {
+                    gState = StateLocateClockRisingEdge;
+                }
+                else
+                {
+                    gState = StateLocateClockLow;
+                }
+            }
+            break;
+		case StateLocateClockLow:
+            if ((data[i] & gFrameSyncPinMask) != 0)
+			{
+				cout << "frame lost " << (int)data[i] << endl << flush;
+				gState = StateUnknown;
+			}
+            else if ((data[i] & gClockPinMask) == 0)
+            {
+                gState = StateLocateClockRisingEdge;
+            }
+            break;
+        case StateLocateClockRisingEdge:
+            if ((data[i] & gFrameSyncPinMask) != 0)
+			{
+				cout << "frame lost " << (int)data[i] << endl << flush;
+				gState = StateUnknown;
+			}
+            else if ((data[i] & gClockPinMask) != 0)
+            {
+                // read data in and data out bits
+                gDataIn |= (((data[i] & gDataInPinMask) >> gDataInPin)
+                    << gBitCount);
+                gDataOut |= (((data[i] & gDataOutPinMask) >> gDataOutPin)
+                    << gBitCount);
+                gBitCount--;
+ 
+                if (gBitCount == -1)
+                {
+                    //  read one byte, save it
+                    cout << (gPrintDataIn ? gDataIn : gDataOut);
+                    gDataIn = gDataOut = 0;
+                    gBitCount = gWordLengthInBits - 1;
+                    gWordCount++;
+                }
+ 
+                if (gWordCount == gWordsInFrame)
+                {
+                    // read all bytes (8 words) in the frame
+                    gWordCount = 0;
+                    gState = StateUnknown;
+                }
+                else
+                {
+                    gState = StateLocateClockLow;
+                }
+            }
+            break;
+        default:
+            cerr << "not good";
+        }
+    }
+ 
+    // you own this data.  You don't have to delete it immediately,
+    // you could keep it and process it later, for example, or pass
+    // it to another thread for processing.
+    DevicesManagerInterface::DeleteU8ArrayPtr( data );
+}
+
+void __stdcall OnWriteData( U64 device_id, U8* data, U32 data_length, void* user_data )
+{
+#if( USE_LOGIC_16 )
+
+#else
+	static U8 dat = 0;
+
+	//it's our job to feed data to Logic whenever this function gets called.  Here we're just counting.
+	//Note that you probably won't be able to get Logic to write data at faster than 4MHz (on Windows) do to some driver limitations.
+
+	//here we're just filling the data with a 0-255 pattern.
+	for( U32 i=0; i<data_length; i++ )
+	{
+		*data = dat;
+		dat++;
+		data++;
+	}
+
+	std::cout << "Wrote " << data_length << " bytes of data." << std::endl;
+#endif
+}
+
+void __stdcall OnError( U64 device_id, void* user_data )
+{
+	std::cout << "A device reported an Error.  This probably means that it could not keep up at the given data rate, or was disconnected. You can re-start the capture automatically, if your application can tolerate gaps in the data." << std::endl;
+	//note that you should not attempt to restart data collection from this function -- you'll need to do it from your main thread (or at least not the one that just called this function).
+}

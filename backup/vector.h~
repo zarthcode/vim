@@ -1,0 +1,35 @@
+#include <math.h>
+
+#define DEGREE_TO_RAD	((double)M_PI / 180.0f)
+#define RAD_TO_DEGREE	(180.0f / (double)M_PI)
+
+#define TWO_PI			(2.0f * (double)M_PI)
+
+#define VEC3_X	0
+#define VEC3_Y	1
+#define VEC3_Z 	2
+
+typedef double vector3d_t[3];
+
+/**
+ * @brief Computes the dot product of two 3d vectors.
+ *
+ * @todo Convert to fixed point.
+ *
+ * @param a[in] First operand.
+ * @param b[in] Second operand.
+ * @param d[out] Result.
+ */
+void vect_dotProduct(const vector3d_t* a, const vector3d_t* b, double *d);
+
+
+/**
+ * @brief Computes the cross product of two 3d vectors.
+ *
+ * @todo Convert to fixed point.
+ *
+ * @param a[in] First operand.
+ * @param b[in] Second operand.
+ * @param d[out] Result
+ */
+void vect_crossProduct(const vector3d_t* a, const vector3d_t* b, vector3d_t *d);

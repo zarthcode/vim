@@ -1,0 +1,150 @@
+#include "accel.h"
+#include <avr/io.h>
+#include <stdio.h>
+#include <avr/pgmspace.h>
+#include "XMEGA/spimaster.h"
+
+
+// Register addresses
+#define STATUS_REG_AUX 0x07
+#define OUT_ADC1_L 0x08 
+#define OUT_ADC1_H 0x09
+#define OUT_ADC2_L 0x0A
+#define OUT_ADC2_H 0x0B
+#define OUT_ADC3_L 0x0C
+#define OUT_ADC3_H 0x0D
+#define INT_COUNTER_REG 0x0E
+#define WHO_AM_I 0x0F
+#define TEMP_CFG_REG 0x1F
+#define CTRL_REG1 0x20
+#define CTRL_REG2 0x21
+#define CTRL_REG3 0x22
+#define CTRL_REG4 0x23
+#define CTRL_REG5 0x24
+#define CTRL_REG6 0x25
+#define REFERENCE 0x26
+#define STATUS_REG2 0x27
+#define OUT_X_L 0x28
+#define OUT_X_H 0x29
+#define OUT_Y_L 0x2A
+#define OUT_Y_H 0x2B
+#define OUT_Z_L 0x2C
+#define OUT_Z_H 0x2D
+#define FIFO_CTRL_REG 0x2E
+#define FIFO_SRC_REG 0x2F
+#define INT1_CFG 0x30
+#define INT1_SOURCE 0x31
+#define INT1_THS 0x32
+#define INT1_DURATION 0x33
+#define CLICK_CFG 0x38
+#define CLICK_SRC 0x39
+#define CLICK_THS 0x3A
+#define TIME_LIMIT 0x3B
+#define TIME_LATENCY 0x3C
+#define TIME_WINDOW 0x3D
+
+#define LIS3DH_VERBOSE
+#define LIS3DH_INFO
+#define LIS3DH_ERROR
+
+// Logging
+#ifdef LIS3DH_VERBOSE
+	#define log_v(...) printf_P(__VA_ARGS__)
+#else
+	#define log_v(...) while(0) {};
+#endif
+
+
+#ifdef LIS3DH_INFO
+	#define log_i(...) printf_P(__VA_ARGS__)
+#else
+	#define log_i(...) while(0) {};
+#endif
+
+
+#ifdef LIS3DH_ERROR
+	#define log_e(...) printf_P(__VA_ARGS__)
+#else
+	#define log_e(...) while(0) {};
+#endif
+
+/// Formats the register byte for the device to know what operation is being performed.
+uint8_t lis3dh_reg(uint8_t address, bool read, bool multiple)
+{
+
+	return (address << 2) | (read ? 0x01 : 0x00) | (multiple ? 0x02 : 0x00);
+
+}
+
+/// Initializes the accelerometer device.
+void lis3dh_init(uint8_t cs_addr)
+{
+
+	// Bring the chip out of power down mode, into normal mode (1.25kHz), all axes enabled.
+	uint8_t tmp = 0x80;
+	spi_reg_write(&SPIC, cs_addr, lis3dh_reg(CTRL_REG1, false, false) , 1, &tmp);
+
+	// Leave HPF on default settings. (CTRL_REG2)
+
+	// No interrupts (CTRL_REG3)
+
+	// Default data mode. (CTRL_REG4)
+
+	// No FIFO, latching, or 4D. (CTRL_REG5)
+
+	// No CLICK notification. (CTRL_REG6)
+
+
+}
+
+
+bool lis3dh_hasData(uint8_t cs_addr)
+{
+
+	// Check status register
+	uint8_t tmp;
+	spi_reg_read(&SPIC, cs_addr, lis3dh_reg(STATUS_REG2, true, false) , 1, &tmp);
+
+	// Return indication of data available.
+	if(tmp & 0x08)
+	{
+		// New XY&Z data is available.
+		return true;
+	}
+
+	return false;
+
+}
+
+
+void lis3dh_getData(uint8_t cs_addr, accel_t* data)
+{
+
+	// Obtain data from registers.
+	spi_reg_read(&SPIC, cs_addr, lis3dh_reg(OUT_X_L, true, true), 6, data->accel);
+		
+
+
+}
+
+
+
+bool lis3dh_isWorking(uint8_t cs_addr)
+{
+
+	// Retrieve the contents of the WHO_AM_I register.
+	uint8_t tmp;
+	spi_reg_read(&SPIC, cs_addr, lis3dh_reg(WHO_AM_I, true, false) , 1, &tmp);
+
+	// Return indication of result
+	if(tmp == 0x33)
+	{
+		// Dummy register is correct.
+		log_e(PSTR("LIS3DH WHO_AM_I register returned value 0x%X, expected 0x33\n"), tmp);
+		return true;
+	}
+
+	return false;
+		
+}
+

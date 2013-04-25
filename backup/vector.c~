@@ -1,0 +1,20 @@
+#include "vector.h"
+
+
+void vect_dotProduct(const vector3d_t* a, const vector3d_t* b, double *d)
+{
+
+	*d = (*a[VEC3_X]) * (*b[VEC3_X]) + (*a[VEC3_Y]) * (*b[VEC3_Y]) + (*a[VEC3_Z]) * (*b[VEC3_Z]);
+
+}
+
+
+
+void vect_crossProduct(const vector3d_t* a, const vector3d_t* b, double *d)
+{
+
+	d[VEC3_X] = a[VEC3_Y] * b[VEC3_Z] - a[VEC3_Z] * b[VEC3_Y];
+	d[VEC3_Y] = a[VEC3_Z] * b[VEC3_X] - a[VEC3_X] * b[VEC3_Z];
+	d[VEC3_Z] = a[VEC3_X] * b[VEC3_Y] - a[VEC3_Y] * b[VEC3_X];
+
+}
